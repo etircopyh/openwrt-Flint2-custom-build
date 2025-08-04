@@ -14,8 +14,9 @@
 - https://github.com/etircopyh/openwrt-Flint2-custom-build/blob/master/config.immortalwrt-2410-6.6-padavanonly - BUILD CONFIG
 
 ### OpenWRT (pesa1234) SNAPSHOT mt76:
-- https://github.com/pesa1234/openwrt/tree/next-r4.6.6.rss.mtk - FIRMWARE SOURCE
+- https://github.com/pesa1234/openwrt/tree/next-r4.6.7.rss.mtk - FIRMWARE SOURCE
 - https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53 - PACKAGES
 - https://github.com/etircopyh/openwrt-Flint2-custom-build/blob/master/packages-output-openwrt-snapshot-pesa1234 - KMODS
 - https://github.com/pesa1234/MT6000_cust_build - FIRMWARE BUILDS AND PACKAGES by pesa1234
 - https://github.com/etircopyh/openwrt-Flint2-custom-build/blob/master/config.openwrt-snapshot-pesa1234 - BUILD CONFIG
+- https://forum.openwrt.org/t/mt6000-custom-build-with-luci-and-some-optimization-kernel-6-12-x - Discussion
