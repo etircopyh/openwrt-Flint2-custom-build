@@ -147,10 +147,14 @@ jobs:
       - name: Create target deploy dirs
         run: |
           # Create versioned directory name
-          PACKAGES_DIR_NAME="${DATE}_immortalwrt_${VERSION_CODE}_${IMMORTALWRT_VERSION}-kernel-${KERNEL_VERSION}" >> $GITHUB_ENV
-          TARGET_PKG_DIR="$(grep '^CONFIG_TARGET_BOARD=' immortalwrt-mt798x/.config | cut -d= -f2 | tr -d '\"')/$(grep '^CONFIG_TARGET_SUBTARGET=' immortalwrt-mt798x/.config | cut -d= -f2 | tr -d '\"')" >> $GITHUB_ENV
-          PACKAGES_OUT="$PACKAGES_DIR_NAME/targets/$TARGET_PKG_DIR/packages" >> $GITHUB_ENV
+          PACKAGES_DIR_NAME="${DATE}_immortalwrt_${VERSION_CODE}_${IMMORTALWRT_VERSION}-kernel-${KERNEL_VERSION}"
+          TARGET_PKG_DIR="$(grep '^CONFIG_TARGET_BOARD=' immortalwrt-mt798x/.config | cut -d= -f2 | tr -d '\"')/$(grep '^CONFIG_TARGET_SUBTARGET=' immortalwrt-mt798x/.config | cut -d= -f2 | tr -d '\"')"
+          PACKAGES_OUT="$PACKAGES_DIR_NAME/targets/$TARGET_PKG_DIR/packages"
           mkdir -p "$PACKAGES_OUT"
+
+          echo "PACKAGES_DIR_NAME=$PACKAGES_DIR_NAME" >> $GITHUB_ENV
+          echo "TARGET_PKG_DIR=$TARGET_PKG_DIR" >> $GITHUB_ENV
+          echo "PACKAGES_OUT=$PACKAGES_OUT" >> $GITHUB_ENV
 
       - name: Patch feeds.mk for custom package repository
         run: |
