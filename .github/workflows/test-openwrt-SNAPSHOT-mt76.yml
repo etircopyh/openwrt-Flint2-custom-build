@@ -1,4 +1,4 @@
-name: OpenWRT SNAPSHOT Firmware mt76 driver (pesa1234) - Optimized
+name: OpenWRT SNAPSHOT Firmware mt76 driver (pesa1234)
 
 on:
   repository_dispatch:
@@ -13,27 +13,18 @@ env:
   CONFIG_FILE: config.openwrt-snapshot-pesa1234
   TZ: Europe/Kyiv
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  # --- JOB 1: Environment Setup ---
-  setup:
+  build-firmware:
     runs-on: ubuntu-22.04
-    outputs:
-      packages_dir_name: ${{ steps.variables.outputs.packages_dir_name }}
-      target_pkg_dir: ${{ steps.variables.outputs.target_pkg_dir }}
-      packages_out: ${{ steps.variables.outputs.packages_out }}
-      openwrt_version: ${{ steps.variables.outputs.openwrt_version }}
-      kernel_version: ${{ steps.variables.outputs.kernel_version }}
-      version_code: ${{ steps.variables.outputs.version_code }}
-      build_date: ${{ steps.variables.outputs.build_date }}
+    permissions:
+      contents: read
+      actions: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # Get full history instead of single commit
           ref: ${{ github.ref }}
 
       - name: Free up disk space
@@ -47,7 +38,7 @@ jobs:
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
-          sudo chown $USER:$GROUPS /workdir
+          sudo chown -R $(whoami):$(id -gn) /workdir
           df -h
 
       - name: Set up OpenWRT Environment
@@ -87,7 +78,7 @@ jobs:
             mold
 
       - name: Display contents of .config start
-        run: |
+        run:  |
           cat $GITHUB_WORKSPACE/$CONFIG_FILE
 
       - name: Update & Install Feeds
@@ -107,7 +98,6 @@ jobs:
           cat .config
 
       - name: Extract Version Information
-        id: version-info
         run: |
           cd openwrt
 
@@ -133,90 +123,46 @@ jobs:
           OpenWRT_VERSION=$(echo "$OpenWRT_VERSION" | sed 's/[^a-zA-Z0-9.-]//g')
           KERNEL_VERSION=$(echo "$KERNEL_VERSION" | sed 's/[^0-9.]//g')
 
+          # Export to environment
           echo "OpenWRT_VERSION=$OpenWRT_VERSION" >> $GITHUB_ENV
           echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
 
           echo "Extracted OpenWRT Version: $OpenWRT_VERSION"
           echo "Extracted Kernel Version: $KERNEL_VERSION"
 
-      - name: Set build variables
-        id: variables
+      - name: Set target directory variables
         run: |
           cd openwrt
 
           # Set DATE variable for deployment path
-          BUILD_DATE=$(date +%Y%m%d_%H%M%S)
-          echo "DATE=$BUILD_DATE" >> $GITHUB_ENV
+          echo "DATE=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
 
           # Set VERSION_CODE (extract from version info or default)
           VERSION_CODE=$(git rev-parse --short HEAD)
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
 
+          echo "Build variables set:"
+          echo "DATE: $(date +%Y%m%d_%H%M%S)"
+          echo "VERSION_CODE: $VERSION_CODE"
+
+      - name: Create target deploy dirs
+        run: |
           # Create versioned directory name
-          PACKAGES_DIR_NAME="${BUILD_DATE}_openwrt_${VERSION_CODE}_${OpenWRT_VERSION}-kernel-${KERNEL_VERSION}"
-          TARGET_PKG_DIR="$(grep '^CONFIG_TARGET_BOARD=' .config | cut -d= -f2 | tr -d '\"')/$(grep '^CONFIG_TARGET_SUBTARGET=' .config | cut -d= -f2 | tr -d '\"')"
+          PACKAGES_DIR_NAME="${DATE}_openwrt_${VERSION_CODE}_${OPENWRT_VERSION}-kernel-${KERNEL_VERSION}"
+          TARGET_PKG_DIR="$(grep '^CONFIG_TARGET_BOARD=' openwrt/.config | cut -d= -f2 | tr -d '\"')/$(grep '^CONFIG_TARGET_SUBTARGET=' openwrt/.config | cut -d= -f2 | tr -d '\"')"
           PACKAGES_OUT="${PACKAGES_DIR_NAME}/targets/${TARGET_PKG_DIR}/packages"
           mkdir -p "${PACKAGES_OUT}"
 
-          # Set outputs for other jobs
-          echo "packages_dir_name=$PACKAGES_DIR_NAME" >> $GITHUB_OUTPUT
-          echo "target_pkg_dir=$TARGET_PKG_DIR" >> $GITHUB_OUTPUT
-          echo "packages_out=$PACKAGES_OUT" >> $GITHUB_OUTPUT
-          echo "openwrt_version=$OpenWRT_VERSION" >> $GITHUB_OUTPUT
-          echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
-          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
-
-          echo "Build variables set:"
-          echo "PACKAGES_DIR_NAME: $PACKAGES_DIR_NAME"
-          echo "TARGET_PKG_DIR: $TARGET_PKG_DIR"
-          echo "PACKAGES_OUT: $PACKAGES_OUT"
+          echo "PACKAGES_DIR_NAME=$PACKAGES_DIR_NAME" >> $GITHUB_ENV
+          echo "TARGET_PKG_DIR=$TARGET_PKG_DIR" >> $GITHUB_ENV
+          echo "PACKAGES_OUT=$PACKAGES_OUT" >> $GITHUB_ENV
 
       - name: Patch feeds.mk for custom package repository
         run: |
           cd openwrt
           # Update APK core package path
-          sed -i "s|echo '%U/\$(DATE)_\$(VERSION_CODE)_\$(BRANCH)/targets/%S/packages/packages.adb';|echo '%U/${{ steps.variables.outputs.packages_out }}/packages.adb';|" include/feeds.mk
+          sed -i "s|echo '%U/\$(DATE)_\$(VERSION_CODE)_\$(BRANCH)/targets/%S/packages/packages.adb';|echo '%U/${PACKAGES_OUT}/packages.adb';|" include/feeds.mk
           echo "feeds.mk patched successfully"
-
-      - name: Upload setup context
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-setup-context
-          path: |
-            openwrt/
-            ${{ env.CONFIG_FILE }}
-          retention-days: 1
-
-  # --- JOB 2: Build Firmware ---
-  build:
-    needs: setup
-    runs-on: ubuntu-22.04
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-
-    steps:
-      - name: Download setup context
-        uses: actions/download-artifact@v4
-        with:
-          name: openwrt-setup-context
-          path: ${{ github.workspace }}
-
-      - name: Cache OpenWRT download directory
-        uses: actions/cache@v4
-        with:
-          path: openwrt/dl
-          key: ${{ runner.os }}-openwrt-dl-${{ hashFiles('**/feeds.conf.default', '**/package/**/Makefile') }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-dl-
-
-      - name: Cache OpenWRT build tree (ccache)
-        uses: actions/cache@v4
-        with:
-          path: openwrt/build_dir/**/*.o
-          key: ${{ runner.os }}-openwrt-ccache-${{ needs.setup.outputs.build_date }}-${{ needs.setup.outputs.version_code }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-ccache-
 
       - name: Download Sources
         run: |
@@ -229,256 +175,204 @@ jobs:
         run: |
           cd openwrt
           echo -e "$(nproc) thread compile"
-          make -j$(nproc) CCACHE=1 || make -j1 V=s CCACHE=1
+          make -j$(nproc) || make -j1 V=s
 
-      - name: Prepare build artifacts
-        id: prepare-artifacts
+      - name: Prepare packages
         run: |
-          BUILD_DIR=$(ls -d openwrt/bin/$(date +"%Y-%m-%d")_*)
-          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
-          
-          # Extract version information
-          cp $BUILD_DIR/targets/mediatek/filogic/version.buildinfo $GITHUB_WORKSPACE/version.buildinfo
-          BUILDINFO=$(cat $GITHUB_WORKSPACE/version.buildinfo)
-          
-          NOW=$(date +%F-%H%M)
-          RelTag="${NOW}_OpenWRT-${{ needs.setup.outputs.openwrt_version }}_Kernel-${{ needs.setup.outputs.kernel_version }}_${{ env.OpenWRTDevice }}"
-          
-          echo "BUILDINFO=$BUILDINFO" >> $GITHUB_ENV
-          echo "NOW=$NOW" >> $GITHUB_ENV
-          echo "RelTag=$RelTag" >> $GITHUB_ENV
-          echo "firmware_path=$BUILD_DIR/targets/mediatek/filogic" >> $GITHUB_ENV
-
-          echo "Build artifacts prepared:"
-          echo "BUILDINFO: $BUILDINFO"
-          echo "RelTag: $RelTag"
-
-      - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-firmware-${{ env.OpenWRTDevice }}-${{ needs.setup.outputs.openwrt_version }}-k${{ needs.setup.outputs.kernel_version }}-${{ env.NOW }}
-          path: |
-            ${{ env.firmware_path }}/*.bin
-            ${{ env.firmware_path }}/*.buildinfo
-            ${{ env.firmware_path }}/*.manifest
-            ${{ env.firmware_path }}/sha256sums
-          retention-days: 30
-
-      - name: Upload build context for deployment
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-context
-          path: |
-            openwrt/bin/
-            version.buildinfo
-          retention-days: 1
-
-  # --- JOB 3: Package Deployment ---
-  deploy-packages:
-    needs: [setup, build]
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    if: always() && needs.build.result == 'success'
-
-    steps:
-      - name: Download setup context
-        uses: actions/download-artifact@v4
-        with:
-          name: openwrt-setup-context
-          path: ${{ github.workspace }}
-
-      - name: Download build context
-        uses: actions/download-artifact@v4
-        with:
-          name: build-context
-          path: ${{ github.workspace }}
-
-      - name: Extract packages and prepare deployment
-        id: extract-packages
-        run: |
-          BUILD_DIR=$(ls -d openwrt/bin/$(date +"%Y-%m-%d")_*)
-          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
-          
-          cd $BUILD_DIR/targets/mediatek/filogic
-
-          if [ -d "packages" ]; then
-            echo "Found packages directory, processing..."
-            PACKAGE_COUNT=$(find packages -name "*.apk" | wc -l)
-            echo "PACKAGE_COUNT=$PACKAGE_COUNT" >> $GITHUB_ENV
-            echo "packages_created=true" >> $GITHUB_ENV
-          else
-            echo "No packages directory found"
-            echo "packages_created=false" >> $GITHUB_ENV
-            exit 0
-          fi
-
-      - name: Deploy packages to repository
-        if: env.packages_created == 'true'
-        run: |
-          BUILD_DIR=$(ls -d openwrt/bin/$(date +"%Y-%m-%d")_*)
+          cd openwrt
+          BUILD_DIR=$(ls -d bin/$(date +"%Y-%m-%d")_*)
           echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
           echo "Actual build path: $BUILD_DIR"
 
-          ls ${BUILD_DIR}/targets/*/*
-          cd ${BUILD_DIR}/targets/mediatek/filogic;
+          PACKAGE_COUNT=$(find "${BUILD_DIR}/targets/*/*/packages" -name "*.ipk" | wc -l 2>/dev/null || echo 0)
+          echo "PACKAGE_COUNT=$PACKAGE_COUNT" >> $GITHUB_ENV
+          echo "Found $PACKAGE_COUNT .ipk packages"
 
-          if [ -d "packages" ]; then
-            echo "Found packages directory, processing..."
+          mkdir -p "${PACKAGES_OUT}"
+          cp -v "${BUILD_DIR}"/targets/*/*/packages/*.ipk "${PACKAGES_OUT}/" 2>/dev/null || true
 
-            PACKAGE_COUNT=$(find packages -name "*.apk" | wc -l)
-            echo "Found $PACKAGE_COUNT .apk packages"
+          ls "${BUILD_DIR}/targets/*/*"
+          ls -l "${PACKAGES_OUT}" || true
 
-            git config --global user.name 'OpenWRT Build Bot'
-            git config --global user.email 'actions@github.com'
+          # Create README with version info
+          REPO_NAME="${{ github.repository }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          cat > "${PACKAGES_DIR_NAME}/README.md" << EOF
+# OpenWRT Packages
 
-            cd $GITHUB_WORKSPACE;
-            rm -f packages-output-openwrt-snapshot-pesa1234
+**Generated on:** ${DATE}
+**Device:** ${OpenWRTDevice}
+**OpenWRT Version:** ${OpenWRT_VERSION}
+**Kernel Version:** ${KERNEL_VERSION}
+**Source Branch:** ${REPO_BRANCH}
+**Deploy Path:** ${PACKAGES_DIR_NAME}
 
-            cp -v ${BUILD_DIR}/targets/*/*/packages/* ${PACKAGES_OUT} || true
-            ln -sfv "${PACKAGES_OUT}" packages-output-openwrt-snapshot-pesa1234 || true
-            ls -l packages-output-openwrt-snapshot-pesa1234 || true
+## Package Repository Configuration
 
-            # Create README with version info
-            cat > "$PACKAGES_DIR_NAME/README.md" << 'EOF'
-          # OpenWRT Packages
+Add this to your OpenWRT device's /etc/opkg/distfeeds.conf:
 
-          **Generated on:** ${{ env.DATE }}
-          **Device:** ${{ env.OpenWRTDevice }}
-          **OpenWRT Version:** ${{ env.OpenWRT_VERSION }}
-          **Kernel Version:** ${{ env.KERNEL_VERSION }}
-          **Source Branch:** ${{ env.REPO_BRANCH }}
-          **Deploy Path:** ${{ env.PACKAGES_DIR_NAME }}
+\`\`\`
+src/gz openwrt_core https://raw.githubusercontent.com/${REPO_NAME}/${BRANCH_NAME}/${PACKAGES_OUT}
+\`\`\`
 
-          ## Package Repository Configuration
+The URL points to the packages directory. Opkg will fetch \`${PACKAGES_OUT}/packages.adb\`.
 
-          Add this to your OpenWRT device's /etc/opkg/distfeeds.conf:
+## Package List
+EOF
 
-          \`\`\`
-          src/gz openwrt_core https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/${{ env.PACKAGES_OUT }}
-          \`\`\`
-
-          Replace %S with your target (e.g., mediatek/filogic)
-
-          ## Package List
-          EOF
-
-            # Add package list to README
-            find "$PACKAGES_DIR_NAME" -name "*.apk" -type f | sort | while read -r pkg; do
-              PKG_NAME=$(basename "$pkg")
-              PKG_SIZE=$(du -h "$pkg" | cut -f1)
-              echo "- $PKG_NAME ($PKG_SIZE)" >> "$PACKAGES_DIR_NAME/README.md"
+          if [ "$PACKAGE_COUNT" -gt 0 ]; then
+            find "${PACKAGES_OUT}" -name "*.ipk" -type f | sort | while read -r pkg; do
+              PKG_NAME=\$(basename "\$pkg")
+              PKG_SIZE=\$(du -h "\$pkg" | cut -f1)
+              echo "- \$PKG_NAME (\$PKG_SIZE)" >> "${PACKAGES_DIR_NAME}/README.md"
             done
-
-            git pull origin ${{ github.ref_name }} --rebase --autostash
-
-            git add "$PACKAGES_DIR_NAME/"
-            git add packages-output-openwrt-snapshot-pesa1234
-
-            if ! git diff --staged --quiet; then
-              git commit -m "Update packages ($PACKAGE_COUNT .apk files) - OpenWRT ${OpenWRT_VERSION} / Kernel ${KERNEL_VERSION}"
-              git push origin ${{ github.ref_name }}
-              echo "Successfully deployed $PACKAGE_COUNT packages"
-            else
-              echo "No changes detected in packages"
-            fi
-
-            # Create archive
-            cd ${BUILD_DIR}/targets/mediatek/filogic;
-            PACKAGES_ARCHIVE="openwrt-packages-${DATE}-v${OpenWRT_VERSION}-k${KERNEL_VERSION}.tar.gz"
-            tar -czf "$PACKAGES_ARCHIVE" packages/
-
-            echo "PACKAGES_ARCHIVE=$PACKAGES_ARCHIVE" >> $GITHUB_ENV
-            echo "PACKAGES_CREATED=true" >> $GITHUB_ENV
-            echo "PACKAGE_COUNT=$PACKAGE_COUNT" >> $GITHUB_ENV
-            echo "PACKAGES_DIR_NAME=$PACKAGES_DIR_NAME" >> $GITHUB_ENV
-
-            echo "Created archive: $PACKAGES_ARCHIVE"
-
           else
-            echo "No packages directory found in build output"
-            echo "PACKAGES_CREATED=false" >> $GITHUB_ENV
+            echo "No packages available." >> "${PACKAGES_DIR_NAME}/README.md"
           fi
 
-      - name: Upload packages archive
-        if: env.packages_created == 'true'
+      - name: Create symlink for deployment
+        if: env.PACKAGE_COUNT != '0'
+        run: |
+          ln -sf "${PACKAGES_DIR_NAME}/targets/${TARGET_PKG_DIR}/packages" packages-output-openwrt-snapshot-pesa1234
+
+      - name: Prepare firmware artifact
+        run: |
+          cd openwrt
+          TARGET_DIR="${BUILD_DIR}/targets/mediatek/filogic"
+          cd "$TARGET_DIR"
+
+          if [ -d "packages" ]; then
+            PACKAGES_ARCHIVE="openwrt-packages-${DATE}-v${OpenWRT_VERSION}-k${KERNEL_VERSION}.tar.gz"
+            tar -czf "${GITHUB_WORKSPACE}/${PACKAGES_ARCHIVE}" packages/
+            echo "Created archive: ${PACKAGES_ARCHIVE}"
+          fi
+
+          rm -rf packages
+          echo "FIRMWARE=$(pwd)" >> $GITHUB_ENV
+          cp version.buildinfo "${GITHUB_WORKSPACE}/"
+          echo "NOW=$(date +%F-%H%M)" >> $GITHUB_ENV
+
+      - name: Extract version information from version.buildinfo
+        run: |
+          echo "BUILDINFO=$(cat version.buildinfo)" >> $GITHUB_ENV
+
+      - name: Upload firmware to artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWRT_packages-${{ env.OpenWRTDevice }}-${{ needs.setup.outputs.openwrt_version }}-k${{ needs.setup.outputs.kernel_version }}-${{ needs.build.outputs.NOW }}
-          path: ${{ env.BUILD_DIR }}/targets/mediatek/filogic/${{ env.PACKAGES_ARCHIVE }}
-          retention-days: 30
+          name: firmware-build
+          path: ${{ env.FIRMWARE }}
 
-  # --- JOB 4: Release Creation ---
-  create-release:
-    needs: [build, deploy-packages]
+      - name: Upload packages archive as artifact
+        if: env.PACKAGE_COUNT != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-archive-build
+          path: ${{ env.PACKAGES_ARCHIVE }}
+
+      - name: Upload packages for deployment
+        if: env.PACKAGE_COUNT != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-deploy
+          path: |
+            ${{ env.PACKAGES_DIR_NAME }}
+            packages-output-openwrt-snapshot-pesa1234
+
+      - name: Set job outputs
+        id: outputs
+        run: |
+          echo "package_count=${PACKAGE_COUNT}" >> $GITHUB_OUTPUT
+          echo "openwrt_version=${OpenWRT_VERSION}" >> $GITHUB_OUTPUT
+          echo "kernel_version=${KERNEL_VERSION}" >> $GITHUB_OUTPUT
+          echo "date=${DATE}" >> $GITHUB_OUTPUT
+          echo "now=${NOW}" >> $GITHUB_OUTPUT
+          echo "buildinfo=${BUILDINFO}" >> $GITHUB_OUTPUT
+          echo "version_code=${VERSION_CODE}" >> $GITHUB_OUTPUT
+          echo "packages_dir_name=${PACKAGES_DIR_NAME}" >> $GITHUB_OUTPUT
+          echo "target_pkg_dir=${TARGET_PKG_DIR}" >> $GITHUB_OUTPUT
+
+  deploy-release:
+    needs: build-firmware
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-    if: always() && needs.build.result == 'success'
+      actions: read
 
     steps:
-      - name: Download firmware artifacts
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set env vars
+        run: |
+          echo "OpenWRT_VERSION=${{ needs.build-firmware.outputs.openwrt_version }}" >> $GITHUB_ENV
+          echo "KERNEL_VERSION=${{ needs.build-firmware.outputs.kernel_version }}" >> $GITHUB_ENV
+          echo "DATE=${{ needs.build-firmware.outputs.date }}" >> $GITHUB_ENV
+          echo "NOW=${{ needs.build-firmware.outputs.now }}" >> $GITHUB_ENV
+          echo "BUILDINFO=${{ needs.build-firmware.outputs.buildinfo }}" >> $GITHUB_ENV
+          echo "PACKAGES_DIR_NAME=${{ needs.build-firmware.outputs.packages_dir_name }}" >> $GITHUB_ENV
+          echo "TARGET_PKG_DIR=${{ needs.build-firmware.outputs.target_pkg_dir }}" >> $GITHUB_ENV
+          echo "PACKAGE_COUNT=${{ needs.build-firmware.outputs.package_count }}" >> $GITHUB_ENV
+          if [ "${PACKAGE_COUNT}" != "0" ]; then
+            echo "PACKAGES_ARCHIVE=openwrt-packages-${DATE}-v${OpenWRT_VERSION}-k${KERNEL_VERSION}.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Download firmware
         uses: actions/download-artifact@v4
         with:
-          pattern: openwrt-firmware-*
-          path: firmware-artifacts
+          name: firmware-build
+          path: firmware
 
       - name: Download packages archive
+        if: needs.build-firmware.outputs.package_count != '0'
         uses: actions/download-artifact@v4
         with:
-          pattern: OpenWRT_packages-*
-          path: packages-artifacts
+          name: packages-archive-build
+          path: .
 
-      - name: List artifacts for release
-        run: |
-          echo "Firmware artifacts:"
-          find firmware-artifacts -type f -name "*.bin" -o -name "*.buildinfo" -o -name "*.manifest" -o -name "sha256sums" | sort
-          echo "Packages artifacts:"
-          find packages-artifacts -type f -name "*.tar.gz" | sort
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Download packages for deploy
+        if: needs.build-firmware.outputs.package_count != '0'
+        uses: actions/download-artifact@v4
         with:
-          tag_name: ${{ needs.build.outputs.BUILDINFO }}
-          name: "${{ needs.build.outputs.RelTag }}"
-          body: |
-            OpenWRT SNAPSHOT Build for ${{ env.OpenWRTDevice }}
-            
-            **Build Details:**
-            - OpenWRT Version: ${{ needs.setup.outputs.openwrt_version }}
-            - Kernel Version: ${{ needs.setup.outputs.kernel_version }}
-            - Build Date: ${{ needs.setup.outputs.build_date }}
-            - Source Branch: ${{ env.REPO_BRANCH }}
-            - Commit: ${{ needs.setup.outputs.version_code }}
-            
-            **Included Artifacts:**
-            - Firmware images (.bin)
-            - Build information (.buildinfo, .manifest)
-            - Checksums (sha256sums)
-            - Packages archive (.tar.gz)
-          files: |
-            firmware-artifacts/**/*
-            packages-artifacts/**/*
-          draft: false
+          name: packages-deploy
+          path: .
+
+      - name: Deploy and archive packages
+        if: needs.build-firmware.outputs.package_count != '0'
+        run: |
+          git config --global user.name 'OpenWRT Build Bot'
+          git config --global user.email 'actions@github.com'
+
+          rm -f packages-output-openwrt-snapshot-pesa1234
+
+          git pull origin ${{ github.ref_name }} --rebase --autostash || true
+
+          git add "${PACKAGES_DIR_NAME}/"
+          git add packages-output-openwrt-snapshot-pesa1234
+
+          if ! git diff --staged --quiet; then
+            git commit -m "[ci skip] Update packages (${PACKAGE_COUNT} .ipk files) - OpenWRT ${OpenWRT_VERSION} / Kernel ${KERNEL_VERSION}"
+            git push origin ${{ github.ref_name }}
+            echo "Successfully deployed ${PACKAGE_COUNT} packages"
+          else
+            echo "No changes detected in packages"
+          fi
+
+      - name: Build RelTag
+        run: |
+          echo "RelTag=${NOW}_OpenWRT-${OpenWRT_VERSION}_Kernel-${KERNEL_VERSION}_${OpenWRTDevice}" >> $GITHUB_ENV
+
+      - name: Create a release
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
           prerelease: false
-
-  # --- JOB 5: Cleanup ---
-  cleanup:
-    needs: [setup, build, deploy-packages, create-release]
-    runs-on: ubuntu-22.04
-    if: always()
-
-    steps:
-      - name: Delete temporary artifacts
-        run: |
-          echo "Cleaning up temporary build artifacts..."
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Workflow status
-        run: |
-          echo "Workflow completed with status:"
-          echo "Setup: ${{ needs.setup.result }}"
-          echo "Build: ${{ needs.build.result }}"
-          echo "Deploy: ${{ needs.deploy-packages.result }}"
-          echo "Release: ${{ needs.create-release.result }}"
+          title: "${{ env.RelTag }}"
+          automatic_release_tag: "${{ env.BUILDINFO }}"
+          files: |
+            firmware/*.bin
+            firmware/*.buildinfo
+            firmware/*.manifest
+            firmware/sha256sums
+            ${{ env.PACKAGES_ARCHIVE }}
