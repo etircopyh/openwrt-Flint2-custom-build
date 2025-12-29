@@ -8,7 +8,7 @@ on:
 
 env:
   REPO_URL: https://github.com/pesa1234/openwrt.git
-  REPO_BRANCH: next-r4.6.22.rss.mtk
+  REPO_BRANCH: next-r4.7.0.rss.mtk
   OpenWRTDevice: Flint2_GL-MT6000
   CONFIG_FILE: config.test-openwrt-snapshot-pesa1234
   TZ: Europe/Kyiv
