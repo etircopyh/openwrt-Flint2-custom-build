@@ -238,7 +238,7 @@ jobs:
             git pull origin ${{ github.ref_name }} --rebase --autostash
 
             git add "$PACKAGES_DIR_NAME/"
-            git add packages-output-immortalwrt-2410-padavanonly
+            git add packages-output-immortalwrt-2410-5.4-padavanonly
 
             if ! git diff --staged --quiet; then
               git commit -m "Update packages ($PACKAGE_COUNT .ipk files) - ImmortalWRT ${IMMORTALWRT_VERSION} / Kernel ${KERNEL_VERSION}"
