@@ -3,8 +3,18 @@ name: OpenWRT SNAPSHOT Firmware mt76 driver (pesa1234)
 on:
   repository_dispatch:
   workflow_dispatch:
+    inputs:
+      branch_override:
+        description: 'Override branch (leave empty to use default)'
+        required: false
+        default: ''
+        type: string
   schedule:
     - cron: '0 5 * * 0'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REPO_URL: https://github.com/pesa1234/openwrt.git
@@ -16,6 +26,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360
     permissions:
       contents: write  # Needed to push commits and create releases
       actions: read    # Needed to read workflow artifacts
@@ -42,11 +53,22 @@ jobs:
           sudo chown $USER:$GROUPS /workdir
           df -h
 
+      - name: Determine branch to use
+        id: branch
+        run: |
+          if [ -n "${{ github.event.inputs.branch_override }}" ]; then
+            echo "BRANCH=${{ github.event.inputs.branch_override }}" >> $GITHUB_ENV
+            echo "Using override branch: ${{ github.event.inputs.branch_override }}"
+          else
+            echo "BRANCH=$REPO_BRANCH" >> $GITHUB_ENV
+            echo "Using default branch: $REPO_BRANCH"
+          fi
+
       - name: Set up OpenWRT Environment
         working-directory: /workdir
         run: |
           df -hT $PWD
-          git clone --branch $REPO_BRANCH $REPO_URL
+          git clone --branch $BRANCH $REPO_URL
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
       - name: Setup Build Environment

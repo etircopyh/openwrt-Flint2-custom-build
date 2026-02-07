@@ -1,0 +1,135 @@
+name: Watch for New Pesa1234 Releases
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+env:
+  UPSTREAM_REPO: pesa1234/openwrt
+  WORKFLOW_FILE: .github/workflows/openwrt-SNAPSHOT-mt76.yml
+
+jobs:
+  check-for-updates:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      new_branch: ${{ steps.check.outputs.new_branch }}
+      current_branch: ${{ steps.check.outputs.current_branch }}
+      should_update: ${{ steps.check.outputs.should_update }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for new branches
+        id: check
+        run: |
+          # Get current branch from workflow file
+          CURRENT_BRANCH=$(grep "REPO_BRANCH:" "$WORKFLOW_FILE" | head -1 | sed 's/.*REPO_BRANCH: //')
+          echo "Current branch: $CURRENT_BRANCH"
+          echo "current_branch=$CURRENT_BRANCH" >> $GITHUB_OUTPUT
+
+          # Fetch all branches from upstream
+          echo "Fetching branches from $UPSTREAM_REPO..."
+          BRANCHES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/$UPSTREAM_REPO/branches?per_page=100" | \
+            jq -r '.[].name' | grep -E '^next-r[0-9]+\.[0-9]+' | sort -V)
+
+          if [ -z "$BRANCHES" ]; then
+            echo "No version branches found"
+            echo "should_update=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Available version branches:"
+          echo "$BRANCHES"
+
+          # Get the latest version branch
+          LATEST_BRANCH=$(echo "$BRANCHES" | tail -1)
+          echo "Latest branch: $LATEST_BRANCH"
+
+          # Compare current vs latest
+          if [ "$CURRENT_BRANCH" != "$LATEST_BRANCH" ]; then
+            echo "New version detected!"
+            echo "new_branch=$LATEST_BRANCH" >> $GITHUB_OUTPUT
+            echo "should_update=true" >> $GITHUB_OUTPUT
+          else
+            echo "No new version available"
+            echo "should_update=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update workflow file
+        if: steps.check.outputs.should_update == 'true'
+        run: |
+          NEW_BRANCH="${{ steps.check.outputs.new_branch }}"
+          CURRENT_BRANCH="${{ steps.check.outputs.current_branch }}"
+
+          echo "Updating workflow from $CURRENT_BRANCH to $NEW_BRANCH"
+
+          # Update the REPO_BRANCH in workflow file
+          sed -i "s/REPO_BRANCH: $CURRENT_BRANCH/REPO_BRANCH: $NEW_BRANCH/" "$WORKFLOW_FILE"
+
+          # Verify the change
+          grep "REPO_BRANCH:" "$WORKFLOW_FILE" | head -1
+
+      - name: Update README
+        if: steps.check.outputs.should_update == 'true'
+        run: |
+          NEW_BRANCH="${{ steps.check.outputs.new_branch }}"
+          CURRENT_BRANCH="${{ steps.check.outputs.current_branch }}"
+
+          echo "Updating README.md..."
+
+          # Update the branch reference in README
+          sed -i "s|tree/$CURRENT_BRANCH|tree/$NEW_BRANCH|g" README.md
+
+          # Verify the change
+          grep -A2 "OpenWRT (pesa1234)" README.md | head -3
+
+      - name: Commit and push changes
+        if: steps.check.outputs.should_update == 'true'
+        run: |
+          NEW_BRANCH="${{ steps.check.outputs.new_branch }}"
+          CURRENT_BRANCH="${{ steps.check.outputs.current_branch }}"
+
+          git config user.name 'GitHub Actions Bot'
+          git config user.email 'actions@github.com'
+
+          git add "$WORKFLOW_FILE"
+          git add README.md
+
+          git commit -m "chore: update pesa1234 branch from $CURRENT_BRANCH to $NEW_BRANCH - auto-detected new upstream release"
+
+          git push origin ${{ github.ref_name }}
+
+          echo "Changes committed and pushed"
+
+      - name: Trigger build workflow
+        if: steps.check.outputs.should_update == 'true'
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: OpenWRT SNAPSHOT Firmware mt76 driver (pesa1234)
+          token: ${{ secrets.GITHUB_TOKEN }}
+          inputs: '{"branch_override": "${{ steps.check.outputs.new_branch }}"}'
+
+      - name: Summary
+        run: |
+          echo "## Branch Watch Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check.outputs.should_update }}" == "true" ]; then
+            echo "✅ **New version detected!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- Current: \`${{ steps.check.outputs.current_branch }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- New: \`${{ steps.check.outputs.new_branch }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Build workflow has been triggered automatically." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⏸️ No new versions detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Current branch: \`${{ steps.check.outputs.current_branch }}\`" >> $GITHUB_STEP_SUMMARY
+          fi

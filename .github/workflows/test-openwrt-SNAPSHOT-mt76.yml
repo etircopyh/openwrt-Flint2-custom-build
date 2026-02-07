@@ -6,6 +6,10 @@ on:
   schedule:
     - cron: '0 5 * * 0'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REPO_URL: https://github.com/pesa1234/openwrt.git
   REPO_BRANCH: next-r4.6.14.rss.mtk
@@ -197,34 +201,32 @@ jobs:
           # Create README with version info
           REPO_NAME="${{ github.repository }}"
           BRANCH_NAME="${{ github.ref_name }}"
-          cat > "${PACKAGES_DIR_NAME}/README.md" << EOF
-# OpenWRT Packages
-
-**Generated on:** ${DATE}
-**Device:** ${OpenWRTDevice}
-**OpenWRT Version:** ${OpenWRT_VERSION}
-**Kernel Version:** ${KERNEL_VERSION}
-**Source Branch:** ${REPO_BRANCH}
-**Deploy Path:** ${PACKAGES_DIR_NAME}
-
-## Package Repository Configuration
-
-Add this to your OpenWRT device's /etc/opkg/distfeeds.conf:
-
-\`\`\`
-src/gz openwrt_core https://raw.githubusercontent.com/${REPO_NAME}/${BRANCH_NAME}/${PACKAGES_OUT}
-\`\`\`
-
-The URL points to the packages directory. Opkg will fetch \`${PACKAGES_OUT}/packages.adb\`.
-
-## Package List
-EOF
+          {
+            echo "# OpenWRT Packages"
+            echo ""
+            echo "Generated on: ${DATE}"
+            echo "Device: ${OpenWRTDevice}"
+            echo "OpenWRT Version: ${OpenWRT_VERSION}"
+            echo "Kernel Version: ${KERNEL_VERSION}"
+            echo "Source Branch: ${REPO_BRANCH}"
+            echo "Deploy Path: ${PACKAGES_DIR_NAME}"
+            echo ""
+            echo "## Package Repository Configuration"
+            echo ""
+            echo "Add this to your OpenWRT device's /etc/opkg/distfeeds.conf:"
+            echo ""
+            echo 'src/gz openwrt_core https://raw.githubusercontent.com/'"${REPO_NAME}/${BRANCH_NAME}/${PACKAGES_OUT}"
+            echo ""
+            echo "The URL points to the packages directory."
+            echo ""
+            echo "## Package List"
+          } > "${PACKAGES_DIR_NAME}/README.md"
 
           if [ "$PACKAGE_COUNT" -gt 0 ]; then
             find "${PACKAGES_OUT}" -name "*.ipk" -type f | sort | while read -r pkg; do
-              PKG_NAME=\$(basename "\$pkg")
-              PKG_SIZE=\$(du -h "\$pkg" | cut -f1)
-              echo "- \$PKG_NAME (\$PKG_SIZE)" >> "${PACKAGES_DIR_NAME}/README.md"
+              PKG_NAME=$(basename "$pkg")
+              PKG_SIZE=$(du -h "$pkg" | cut -f1)
+              echo "- ${PKG_NAME} (${PKG_SIZE})" >> "${PACKAGES_DIR_NAME}/README.md"
             done
           else
             echo "No packages available." >> "${PACKAGES_DIR_NAME}/README.md"

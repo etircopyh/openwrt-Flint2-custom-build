@@ -1,0 +1,131 @@
+name: Cleanup Old Package Directories
+
+on:
+  schedule:
+    - cron: '0 6 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run - show what would be deleted without deleting'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  RETENTION_DAYS: 21
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Cleanup old package directories
+        id: cleanup
+        run: |
+          echo "Cleaning up directories older than ${{ env.RETENTION_DAYS }} days..."
+          
+          # Calculate cutoff date (21 days ago in YYYYMMDD format)
+          CUTOFF_DATE=$(date -d "${{ env.RETENTION_DAYS }} days ago" +%Y%m%d 2>/dev/null || date -v-${{ env.RETENTION_DAYS }}d +%Y%m%d)
+          echo "Cutoff date: $CUTOFF_DATE (directories before this date will be removed)"
+          
+          # Find directories matching the pattern YYYYMMDD_* that are older than cutoff
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+          DELETED_COUNT=0
+          PROTECTED_COUNT=0
+          
+          # Get list of directories that symlinks point to (these should be protected)
+          PROTECTED_DIRS=$(find . -maxdepth 1 -type l -name "packages-output-*" -exec readlink {} \; 2>/dev/null | sed 's|^\./||')
+          echo "Protected directories (symlink targets):"
+          echo "$PROTECTED_DIRS" | while read -r dir; do
+            [ -n "$dir" ] && echo "  - $dir"
+          done
+          
+          # Find all dated directories
+          for dir in 20[0-9][0-9][0-9][0-9][0-9][0-9]_*; do
+            [ -d "$dir" ] || continue
+            
+            # Extract date from directory name (first 8 characters: YYYYMMDD)
+            DIR_DATE=$(echo "$dir" | cut -c1-8)
+            
+            # Check if directory is protected (current symlink target)
+            if echo "$PROTECTED_DIRS" | grep -qx "$dir"; then
+              echo "⏭️  SKIPPED (protected): $dir"
+              PROTECTED_COUNT=$((PROTECTED_COUNT + 1))
+              continue
+            fi
+            
+            # Compare dates
+            if [ "$DIR_DATE" -lt "$CUTOFF_DATE" ]; then
+              DIR_SIZE=$(du -sh "$dir" 2>/dev/null | cut -f1)
+              
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "🗑️  WOULD DELETE (dry-run): $dir ($DIR_SIZE)"
+              else
+                echo "🗑️  DELETING: $dir ($DIR_SIZE)"
+                rm -rf "$dir"
+                DELETED_COUNT=$((DELETED_COUNT + 1))
+              fi
+            else
+              echo "✅ Keeping: $dir (newer than cutoff)"
+            fi
+          done
+          
+          echo ""
+          echo "Summary:"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "  - Dry run mode - no directories were actually deleted"
+            echo "  - Run with dry_run=false to actually delete"
+          else
+            echo "  - Deleted: $DELETED_COUNT directories"
+          fi
+          echo "  - Protected: $PROTECTED_COUNT directories"
+          
+          echo "deleted_count=$DELETED_COUNT" >> $GITHUB_OUTPUT
+          echo "dry_run=$DRY_RUN" >> $GITHUB_OUTPUT
+      
+      - name: Commit and push changes
+        if: steps.cleanup.outputs.dry_run == 'false' && steps.cleanup.outputs.deleted_count != '0'
+        run: |
+          git config user.name 'GitHub Actions'
+          git config user.email 'actions@github.com'
+          
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            COMMIT_MSG=$(cat << 'COMMIT_EOF'
+          Cleanup: Remove package directories older than ${{ env.RETENTION_DAYS }} days
+
+          Deleted ${{ steps.cleanup.outputs.deleted_count }} directories
+          Retention period: ${{ env.RETENTION_DAYS }} days (3 weeks)
+          COMMIT_EOF
+          )
+            git commit -m "$COMMIT_MSG"
+            git push
+            echo "Changes committed and pushed"
+          else
+            echo "No changes to commit"
+          fi
+      
+      - name: Summary
+        run: |
+          echo "## Cleanup Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.cleanup.outputs.dry_run }}" = "true" ]; then
+            echo "⚠️ **Dry run mode** - No actual deletions performed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To actually delete directories, re-run this workflow with **dry_run=false**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Deleted **${{ steps.cleanup.outputs.deleted_count }}** directories" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Retention period: **${{ env.RETENTION_DAYS }} days**" >> $GITHUB_STEP_SUMMARY

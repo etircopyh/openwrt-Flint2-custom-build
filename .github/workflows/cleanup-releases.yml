@@ -1,0 +1,46 @@
+name: Cleanup Old Releases
+
+on:
+  schedule:
+    - cron: '0 7 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run - show what would be deleted without deleting'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      keep_releases:
+        description: 'Number of recent releases to keep'
+        required: false
+        default: '10'
+        type: string
+
+env:
+  KEEP_RELEASES: ${{ github.event.inputs.keep_releases || '10' }}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Delete old releases
+        uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: ${{ env.KEEP_RELEASES }}
+          delete_tags: true
+          dry_run: ${{ github.event.inputs.dry_run || 'false' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Summary
+        run: |
+          echo "## Release Cleanup Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Kept latest: **${{ env.KEEP_RELEASES }}** releases" >> $GITHUB_STEP_SUMMARY
+          echo "Mode: **${{ github.event.inputs.dry_run || 'false' == 'true' && 'Dry run (no deletions)' || 'Live deletions' }}**" >> $GITHUB_STEP_SUMMARY
