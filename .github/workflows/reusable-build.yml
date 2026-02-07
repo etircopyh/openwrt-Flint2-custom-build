@@ -35,7 +35,7 @@ on:
         type: string
         default: ''
     secrets:
-      github_token:
+      gh_token:
         required: true
 
 env:
@@ -259,7 +259,7 @@ jobs:
       - name: Create release
         uses: marvinpinto/action-automatic-releases@latest
         with:
-          repo_token: ${{ secrets.github_token }}
+          repo_token: ${{ secrets.gh_token }}
           prerelease: false
           title: "${{ inputs.device_name }}-${{ env.DATE }}"
           automatic_release_tag: "${{ inputs.firmware_name }}-${{ env.DATE }}"
