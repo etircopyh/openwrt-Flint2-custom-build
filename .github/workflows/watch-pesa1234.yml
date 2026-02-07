@@ -29,8 +29,8 @@ jobs:
       - name: Check for new branches
         id: check
         run: |
-          # Get current branch from workflow file
-          CURRENT_BRANCH=$(grep "REPO_BRANCH:" "$WORKFLOW_FILE" | head -1 | sed 's/.*REPO_BRANCH: //')
+          # Get current branch from workflow file - extract the default value from the expression
+          CURRENT_BRANCH=$(grep -oP "repo_branch:.*\|\s*'\K[^']*" "$WORKFLOW_FILE" | head -1)
           echo "Current branch: $CURRENT_BRANCH"
           echo "current_branch=$CURRENT_BRANCH" >> $GITHUB_OUTPUT
 
@@ -71,11 +71,11 @@ jobs:
 
           echo "Updating workflow from $CURRENT_BRANCH to $NEW_BRANCH"
 
-          # Update the REPO_BRANCH in workflow file
-          sed -i "s/REPO_BRANCH: $CURRENT_BRANCH/REPO_BRANCH: $NEW_BRANCH/" "$WORKFLOW_FILE"
+          # Update the repo_branch in workflow file - replace the default value in the expression
+          sed -i "s/repo_branch:.*|| '$CURRENT_BRANCH'/repo_branch: \${{ inputs.branch_override || '$NEW_BRANCH' }}/" "$WORKFLOW_FILE"
 
           # Verify the change
-          grep "REPO_BRANCH:" "$WORKFLOW_FILE" | head -1
+          grep "repo_branch:" "$WORKFLOW_FILE" | head -1
 
       - name: Update README
         if: steps.check.outputs.should_update == 'true'
@@ -85,8 +85,8 @@ jobs:
 
           echo "Updating README.md..."
 
-          # Update the branch reference in README (match full URL for precision)
-          sed -i "s|https://github.com/pesa1234/openwrt/tree/$CURRENT_BRANCH|https://github.com/pesa1234/openwrt/tree/$NEW_BRANCH|g" README.md
+          # Update the branch reference in README - more precise pattern to avoid duplicates
+          sed -i "s|tree/$CURRENT_BRANCH |tree/$NEW_BRANCH |g" README.md
 
           # Verify the change
           grep "OpenWRT (pesa1234)" -A1 README.md | head -2

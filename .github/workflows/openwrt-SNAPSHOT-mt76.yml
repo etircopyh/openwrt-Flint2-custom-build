@@ -18,10 +18,10 @@ jobs:
     uses: ./.github/workflows/reusable-build.yml
     with:
       repo_url: https://github.com/pesa1234/openwrt.git
-      repo_branch: ${{ inputs.branch_override || 'next-r4.7.1.rss.mtk' }}
+      repo_branch: ${{ inputs.branch_override || 'next-r4.7.2.rss.mtk' }}
       config_file: config.openwrt-snapshot-pesa1234
       device_name: Flint2_GL-MT6000
       firmware_name: openwrt-snapshot-pesa1234
       source_dir: openwrt
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
