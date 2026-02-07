@@ -22,53 +22,86 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
+      - name: Check if cleanup needed
+        id: check
+        run: |
+          # Calculate cutoff date (21 days ago in YYYYMMDD format)
+          CUTOFF_DATE=$(date -d "${{ env.RETENTION_DAYS }} days ago" +%Y%m%d 2>/dev/null || date -v-${{ env.RETENTION_DAYS }}d +%Y%m%d)
+
+          # Get list of directories that symlinks point to (these should be protected)
+          PROTECTED_DIRS=$(find . -maxdepth 1 -type l -name "packages-output-*" -exec readlink {} \; 2>/dev/null | sed 's|^\./||')
+
+          # Count directories that would be deleted
+          CANDIDATES=0
+          for dir in 20[0-9][0-9][0-9][0-9][0-9][0-9]_*; do
+            [ -d "$dir" ] || continue
+            DIR_DATE=$(echo "$dir" | cut -c1-8)
+
+            if echo "$PROTECTED_DIRS" | grep -qx "$dir"; then
+              continue
+            fi
+
+            if [ "$DIR_DATE" -lt "$CUTOFF_DATE" ]; then
+              CANDIDATES=$((CANDIDATES + 1))
+            fi
+          done
+
+          if [ "$CANDIDATES" -eq 0 ]; then
+            echo "No directories to clean up (cutoff: $CUTOFF_DATE)"
+            echo "cleanup_needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Found $CANDIDATES directories to clean up"
+            echo "cleanup_needed=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Cleanup old package directories
         id: cleanup
+        if: steps.check.outputs.cleanup_needed == 'true'
         run: |
           echo "Cleaning up directories older than ${{ env.RETENTION_DAYS }} days..."
-          
+
           # Calculate cutoff date (21 days ago in YYYYMMDD format)
           CUTOFF_DATE=$(date -d "${{ env.RETENTION_DAYS }} days ago" +%Y%m%d 2>/dev/null || date -v-${{ env.RETENTION_DAYS }}d +%Y%m%d)
           echo "Cutoff date: $CUTOFF_DATE (directories before this date will be removed)"
-          
+
           # Find directories matching the pattern YYYYMMDD_* that are older than cutoff
           DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
           DELETED_COUNT=0
           PROTECTED_COUNT=0
-          
+
           # Get list of directories that symlinks point to (these should be protected)
           PROTECTED_DIRS=$(find . -maxdepth 1 -type l -name "packages-output-*" -exec readlink {} \; 2>/dev/null | sed 's|^\./||')
           echo "Protected directories (symlink targets):"
           echo "$PROTECTED_DIRS" | while read -r dir; do
             [ -n "$dir" ] && echo "  - $dir"
           done
-          
+
           # Find all dated directories
           for dir in 20[0-9][0-9][0-9][0-9][0-9][0-9]_*; do
             [ -d "$dir" ] || continue
-            
+
             # Extract date from directory name (first 8 characters: YYYYMMDD)
             DIR_DATE=$(echo "$dir" | cut -c1-8)
-            
+
             # Check if directory is protected (current symlink target)
             if echo "$PROTECTED_DIRS" | grep -qx "$dir"; then
               echo "⏭️  SKIPPED (protected): $dir"
               PROTECTED_COUNT=$((PROTECTED_COUNT + 1))
               continue
             fi
-            
+
             # Compare dates
             if [ "$DIR_DATE" -lt "$CUTOFF_DATE" ]; then
               DIR_SIZE=$(du -sh "$dir" 2>/dev/null | cut -f1)
-              
+
               if [ "$DRY_RUN" = "true" ]; then
                 echo "🗑️  WOULD DELETE (dry-run): $dir ($DIR_SIZE)"
               else
@@ -80,7 +113,7 @@ jobs:
               echo "✅ Keeping: $dir (newer than cutoff)"
             fi
           done
-          
+
           echo ""
           echo "Summary:"
           if [ "$DRY_RUN" = "true" ]; then
@@ -90,7 +123,7 @@ jobs:
             echo "  - Deleted: $DELETED_COUNT directories"
           fi
           echo "  - Protected: $PROTECTED_COUNT directories"
-          
+
           echo "deleted_count=$DELETED_COUNT" >> $GITHUB_OUTPUT
           echo "dry_run=$DRY_RUN" >> $GITHUB_OUTPUT
       
@@ -120,7 +153,11 @@ jobs:
         run: |
           echo "## Cleanup Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.cleanup.outputs.dry_run }}" = "true" ]; then
+          if [ "${{ steps.check.outputs.cleanup_needed }}" = "false" ]; then
+            echo "✅ **Nothing to clean up**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All package directories are within the retention period." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.cleanup.outputs.dry_run }}" = "true" ]; then
             echo "⚠️ **Dry run mode** - No actual deletions performed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "To actually delete directories, re-run this workflow with **dry_run=false**" >> $GITHUB_STEP_SUMMARY

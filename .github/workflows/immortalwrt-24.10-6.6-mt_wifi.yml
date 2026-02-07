@@ -1,6 +1,8 @@
 name: ImmortalWRT 24.10 Linux 6.6 Firmware mt_wifi driver (padavanonly)
 
 on:
+  schedule:
+    - cron: '0 0 1 * *'
   workflow_dispatch:
 
 concurrency:

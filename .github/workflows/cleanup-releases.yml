@@ -27,9 +27,35 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
+      - name: Check if cleanup needed
+        id: check
+        run: |
+          # Get total number of releases
+          TOTAL_RELEASES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" | \
+            jq 'length')
+
+          KEEP_COUNT=${{ env.KEEP_RELEASES }}
+
+          echo "Total releases: $TOTAL_RELEASES"
+          echo "Keep count: $KEEP_COUNT"
+
+          if [ "$TOTAL_RELEASES" -le "$KEEP_COUNT" ]; then
+            echo "No releases to delete (total: $TOTAL_RELEASES, keep: $KEEP_COUNT)"
+            echo "cleanup_needed=false" >> $GITHUB_OUTPUT
+            echo "total_releases=$TOTAL_RELEASES" >> $GITHUB_OUTPUT
+          else
+            TO_DELETE=$((TOTAL_RELEASES - KEEP_COUNT))
+            echo "Found $TO_DELETE releases to delete"
+            echo "cleanup_needed=true" >> $GITHUB_OUTPUT
+            echo "to_delete=$TO_DELETE" >> $GITHUB_OUTPUT
+          fi
+
       - name: Delete old releases
+        id: cleanup
+        if: steps.check.outputs.cleanup_needed == 'true'
         uses: dev-drprasad/delete-older-releases@v0.3.4
         with:
           keep_latest: ${{ env.KEEP_RELEASES }}
@@ -37,10 +63,21 @@ jobs:
           dry_run: ${{ github.event.inputs.dry_run || 'false' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Summary
         run: |
           echo "## Release Cleanup Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Kept latest: **${{ env.KEEP_RELEASES }}** releases" >> $GITHUB_STEP_SUMMARY
-          echo "Mode: **${{ github.event.inputs.dry_run || 'false' == 'true' && 'Dry run (no deletions)' || 'Live deletions' }}**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check.outputs.cleanup_needed }}" = "false" ]; then
+            echo "✅ **Nothing to clean up**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Total releases: **${{ steps.check.outputs.total_releases }}**" >> $GITHUB_STEP_SUMMARY
+            echo "Keep threshold: **${{ env.KEEP_RELEASES }}**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "No excess releases to delete." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Deleted excess releases" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Kept latest: **${{ env.KEEP_RELEASES }}** releases" >> $GITHUB_STEP_SUMMARY
+            echo "Mode: **${{ github.event.inputs.dry_run || 'false' == 'true' && 'Dry run (no deletions)' || 'Live deletions' }}**" >> $GITHUB_STEP_SUMMARY
+          fi

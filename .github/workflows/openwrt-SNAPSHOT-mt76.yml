@@ -3,6 +3,11 @@ name: OpenWRT SNAPSHOT Firmware mt76 driver (pesa1234)
 on:
   repository_dispatch:
   workflow_dispatch:
+    inputs:
+      branch_override:
+        description: 'Override the default branch (e.g., next-r4.7.2)'
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,7 +18,7 @@ jobs:
     uses: ./.github/workflows/reusable-build.yml
     with:
       repo_url: https://github.com/pesa1234/openwrt.git
-      repo_branch: next-r4.7.1.rss.mtk
+      repo_branch: ${{ inputs.branch_override || 'next-r4.7.1.rss.mtk' }}
       config_file: config.openwrt-snapshot-pesa1234
       device_name: Flint2_GL-MT6000
       firmware_name: openwrt-snapshot-pesa1234

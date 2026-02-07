@@ -2,7 +2,7 @@ name: Watch for New Pesa1234 Releases
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 0 */3 * *'
   workflow_dispatch:
 
 env:
@@ -85,11 +85,11 @@ jobs:
 
           echo "Updating README.md..."
 
-          # Update the branch reference in README
-          sed -i "s|tree/$CURRENT_BRANCH|tree/$NEW_BRANCH|g" README.md
+          # Update the branch reference in README (match full URL for precision)
+          sed -i "s|https://github.com/pesa1234/openwrt/tree/$CURRENT_BRANCH|https://github.com/pesa1234/openwrt/tree/$NEW_BRANCH|g" README.md
 
           # Verify the change
-          grep -A2 "OpenWRT (pesa1234)" README.md | head -3
+          grep "OpenWRT (pesa1234)" -A1 README.md | head -2
 
       - name: Commit and push changes
         if: steps.check.outputs.should_update == 'true'
