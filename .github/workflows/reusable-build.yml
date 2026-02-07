@@ -168,9 +168,9 @@ jobs:
             exit 0
           fi
 
-          TARGET_DIR="${BUILD_DIR}/targets/mediatek/filogic"
+          TARGET_DIR="${BUILD_DIR}/targets/${TARGET_PKG_DIR}"
           if [ ! -d "${TARGET_DIR}/packages" ]; then
-            echo "No packages directory found"
+            echo "No packages directory found at ${TARGET_DIR}/packages"
             echo "PACKAGES_CREATED=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -231,7 +231,7 @@ jobs:
         run: |
           BUILD_DIR=$(find ${{ inputs.source_dir }}/bin -maxdepth 1 -type d -name "*_*" 2>/dev/null | head -1)
           if [ -n "$BUILD_DIR" ]; then
-            TARGET_DIR="${BUILD_DIR}/targets/mediatek/filogic"
+            TARGET_DIR="${BUILD_DIR}/targets/${TARGET_PKG_DIR}"
             if [ -d "${TARGET_DIR}/packages" ]; then
               cd "$TARGET_DIR"
               ARCHIVE_NAME="packages-${{ inputs.firmware_name }}-${DATE}.tar.gz"

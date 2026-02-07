@@ -1,5 +1,7 @@
 # GL.Inet GL-MT6000 (Flint 2) Custom Firmware Builds
 
+[![Build Status](https://github.com/etircopyh/openwrt-Flint2-custom-build/actions/workflows/openwrt-SNAPSHOT-mt76.yml/badge.svg)](https://github.com/etircopyh/openwrt-Flint2-custom-build/actions/workflows/openwrt-SNAPSHOT-mt76.yml)
+
 ### ImmortalWRT (hanwckf) 21.02-SNAPSHOT mt_wifi:
 - https://github.com/hanwckf/immortalwrt-mt798x - FIRMWARE
 - https://downloads.immortalwrt.org/releases/21.02-SNAPSHOT/packages/aarch64_cortex-a53 - PACKAGES
