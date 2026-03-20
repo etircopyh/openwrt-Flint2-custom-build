@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       branch_override:
-        description: 'Override the default branch (e.g., next-r4.7.2)'
+        description: 'Override the default branch (e.g., next-r4.7.4)'
         required: false
         type: string
 
@@ -18,7 +18,7 @@ jobs:
     uses: ./.github/workflows/reusable-build.yml
     with:
       repo_url: https://github.com/pesa1234/openwrt.git
-      repo_branch: ${{ inputs.branch_override || 'next-r4.7.2.rss.mtk' }}
+      repo_branch: ${{ inputs.branch_override || 'next-r4.7.4.rss.mtk' }}
       config_file: config.openwrt-snapshot-pesa1234
       device_name: Flint2_GL-MT6000
       firmware_name: openwrt-snapshot-pesa1234
