@@ -16,6 +16,7 @@ env:
   OpenWRTDevice: Flint2_GL-MT6000
   CONFIG_FILE: config.test-openwrt-snapshot-pesa1234
   TZ: Europe/Kyiv
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ============================================
@@ -161,6 +162,7 @@ jobs:
       package_count: ${{ steps.prepare.outputs.package_count }}
       packages_dir_name: ${{ steps.prepare.outputs.packages_dir_name }}
       target_pkg_dir: ${{ steps.prepare.outputs.target_pkg_dir }}
+      packages_archive: ${{ steps.prepare.outputs.packages_archive }}
 
     steps:
       - name: Checkout
@@ -377,8 +379,8 @@ jobs:
           title: "${{ env.RelTag }}"
           automatic_release_tag: "${{ env.BUILDINFO }}"
           files: |
-            firmware/*.bin
-            firmware/*.buildinfo
-            firmware/*.manifest
-            firmware/sha256sums
+            firmware/bin/*/targets/*/*/*.bin
+            firmware/bin/*/targets/*/*/*.buildinfo
+            firmware/bin/*/targets/*/*/*.manifest
+            firmware/bin/*/targets/*/sha256sums
             openwrt-packages-*.tar.gz
