@@ -28,7 +28,7 @@ on:
         description: 'Whether to patch include/feeds.mk for custom package repository'
         required: false
         type: boolean
-        default: false
+        default: true
       feeds_mk_type:
         description: 'Type of feeds.mk patch: "openwrt-apk" or "immortalwrt-opkg"'
         required: false
