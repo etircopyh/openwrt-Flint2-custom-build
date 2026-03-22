@@ -94,12 +94,18 @@ jobs:
           # Copy packages from targets/<arch>/<subtarget>/packages/ (kernel packages)
           TARGETS_PKG_SRC="${BUILD_DIR}/targets/${{ inputs.target_pkg_dir }}/packages"
           if [ -d "$TARGETS_PKG_SRC" ]; then
-            COUNT=$(find "$TARGETS_PKG_SRC" -name "*.ipk" -type f 2>/dev/null | wc -l)
-            echo "Found $COUNT packages in targets/${{ inputs.target_pkg_dir }}/packages"
-            if [ "$COUNT" -gt 0 ]; then
+            # Check for both .ipk and .apk
+            COUNT_IPK=$(find "$TARGETS_PKG_SRC" -name "*.ipk" -type f 2>/dev/null | wc -l)
+            COUNT_APK=$(find "$TARGETS_PKG_SRC" -name "*.apk" -type f 2>/dev/null | wc -l)
+            COUNT=$((COUNT_IPK + COUNT_APK))
+            echo "Found $COUNT packages ($COUNT_IPK .ipk, $COUNT_APK .apk) in targets/${{ inputs.target_pkg_dir }}/packages"
+            if [ "$COUNT_IPK" -gt 0 ]; then
               cp -v "$TARGETS_PKG_SRC"/*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
-              TOTAL_PACKAGES=$((TOTAL_PACKAGES + COUNT))
             fi
+            if [ "$COUNT_APK" -gt 0 ]; then
+              cp -v "$TARGETS_PKG_SRC"/*.apk "$PACKAGES_OUT/" 2>/dev/null || true
+            fi
+            TOTAL_PACKAGES=$((TOTAL_PACKAGES + COUNT))
           fi
 
           # Copy packages from packages/<arch>/ (main packages - this is where most packages are!)
@@ -109,10 +115,18 @@ jobs:
               echo "Checking packages/$ARCH_NAME..."
               for FEED_DIR in "$PKG_ARCH_DIR"/*; do
                 if [ -d "$FEED_DIR" ]; then
-                  COUNT=$(find "$FEED_DIR" -name "*.ipk" -type f 2>/dev/null | wc -l)
+                  # Check for both .ipk and .apk
+                  COUNT_IPK=$(find "$FEED_DIR" -name "*.ipk" -type f 2>/dev/null | wc -l)
+                  COUNT_APK=$(find "$FEED_DIR" -name "*.apk" -type f 2>/dev/null | wc -l)
+                  COUNT=$((COUNT_IPK + COUNT_APK))
                   if [ "$COUNT" -gt 0 ]; then
-                    echo "Found $COUNT packages in packages/$ARCH_NAME/$(basename "$FEED_DIR")"
-                    cp -v "$FEED_DIR"/*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
+                    echo "Found $COUNT packages ($COUNT_IPK .ipk, $COUNT_APK .apk) in packages/$ARCH_NAME/$(basename "$FEED_DIR")"
+                    if [ "$COUNT_IPK" -gt 0 ]; then
+                      cp -v "$FEED_DIR"/*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
+                    fi
+                    if [ "$COUNT_APK" -gt 0 ]; then
+                      cp -v "$FEED_DIR"/*.apk "$PACKAGES_OUT/" 2>/dev/null || true
+                    fi
                     TOTAL_PACKAGES=$((TOTAL_PACKAGES + COUNT))
                   fi
                 fi
@@ -127,8 +141,8 @@ jobs:
             exit 0
           fi
 
-          # Count unique packages (dedupe)
-          PACKAGE_COUNT=$(find "$PACKAGES_OUT" -name "*.ipk" -type f 2>/dev/null | wc -l)
+          # Count unique packages (dedupe) - count both .ipk and .apk
+          PACKAGE_COUNT=$(find "$PACKAGES_OUT" -type f \( -name "*.ipk" -o -name "*.apk" \) 2>/dev/null | wc -l)
           echo "Unique packages after copy: $PACKAGE_COUNT"
 
           # Create README
@@ -155,7 +169,7 @@ jobs:
             echo "## Package List"
           } > "${PACKAGES_DIR_NAME}/README.md"
 
-          find "$PACKAGES_OUT" -name "*.ipk" -type f | sort | while read -r pkg; do
+          find "$PACKAGES_OUT" -type f \( -name "*.ipk" -o -name "*.apk" \) | sort | while read -r pkg; do
             PKG_NAME=$(basename "$pkg")
             PKG_SIZE=$(du -h "$pkg" | cut -f1)
             echo "- ${PKG_NAME} (${PKG_SIZE})" >> "${PACKAGES_DIR_NAME}/README.md"
