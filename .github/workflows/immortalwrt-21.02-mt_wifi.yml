@@ -20,6 +20,10 @@ jobs:
       repo_branch: openwrt-21.02
       config_file: config.immortalwrt-2102-hanwckf
       source_dir: immortalwrt-mt798x
+      patch_feeds_mk: true
+      feeds_mk_type: immortalwrt-opkg
+      opkg_link: https://downloads.immortalwrt.org/releases/21.02-SNAPSHOT
+      apk_link: https://downloads.openwrt.org/snapshots/packages
 
   prepare:
     needs: build

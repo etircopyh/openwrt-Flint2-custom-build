@@ -20,6 +20,10 @@ jobs:
       repo_branch: openwrt-24.10-6.6
       config_file: config.immortalwrt-2410-6.6-padavanonly
       source_dir: immortalwrt-mt798x-6.6
+      patch_feeds_mk: true
+      feeds_mk_type: immortalwrt-opkg
+      opkg_link: https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT
+      apk_link: https://downloads.openwrt.org/snapshots/packages
 
   prepare:
     needs: build

@@ -20,6 +20,10 @@ jobs:
       source_dir: immortalwrt-mt798x-24.10
       patch_file: 903-fix-nft-reject-bridge.patch
       patch_target: target/linux/generic/backport-5.4
+      patch_feeds_mk: true
+      feeds_mk_type: immortalwrt-opkg
+      opkg_link: https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT
+      apk_link: https://downloads.openwrt.org/snapshots/packages
 
   prepare:
     needs: build

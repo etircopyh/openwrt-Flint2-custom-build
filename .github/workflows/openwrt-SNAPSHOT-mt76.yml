@@ -26,6 +26,8 @@ jobs:
       repo_branch: ${{ inputs.branch_override || 'next-r4.7.4.rss.mtk' }}
       config_file: config.openwrt-snapshot-pesa1234
       source_dir: openwrt
+      patch_feeds_mk: true
+      feeds_mk_type: openwrt-apk
 
   prepare:
     needs: build

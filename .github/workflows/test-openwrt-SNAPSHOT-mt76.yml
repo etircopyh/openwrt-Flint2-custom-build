@@ -18,6 +18,8 @@ jobs:
       repo_branch: next-r4.6.14.rss.mtk
       config_file: config.test-openwrt-snapshot-pesa1234
       source_dir: openwrt
+      patch_feeds_mk: true
+      feeds_mk_type: openwrt-apk
 
   prepare:
     needs: build

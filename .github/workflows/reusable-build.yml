@@ -24,6 +24,26 @@ on:
         required: false
         type: string
         default: ''
+      patch_feeds_mk:
+        description: 'Whether to patch include/feeds.mk for custom package repository'
+        required: false
+        type: boolean
+        default: false
+      feeds_mk_type:
+        description: 'Type of feeds.mk patch: "openwrt-apk" or "immortalwrt-opkg"'
+        required: false
+        type: string
+        default: 'openwrt-apk'
+      opkg_link:
+        description: 'Base URL for OPKG feeds (used when feeds_mk_type=immortalwrt-opkg)'
+        required: false
+        type: string
+        default: ''
+      apk_link:
+        description: 'Base URL for APK feeds (used when feeds_mk_type=immortalwrt-opkg)'
+        required: false
+        type: string
+        default: ''
 
     outputs:
       date:
@@ -127,6 +147,45 @@ jobs:
           cd ${{ inputs.source_dir }}
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
+      - name: Patch feeds.mk for custom package repository
+        if: inputs.patch_feeds_mk
+        run: |
+          cd ${{ inputs.source_dir }}
+          
+          if [ "${{ inputs.feeds_mk_type }}" = "immortalwrt-opkg" ]; then
+            # ImmortalWRT style patching with OPKG and APK links
+            OPKG_LINK="${{ inputs.opkg_link }}"
+            APK_LINK="${{ inputs.apk_link }}"
+            
+            # Add variables after -include line
+            sed -i '/^-include $(TMP_DIR)\/.packageauxvars$/a\\nIWRT_OPKG_LINK:='"$OPKG_LINK"'\nOWRT_APK_LINK:='"$APK_LINK"'' include/feeds.mk
+            
+            # Update OPKG core package path
+            sed -i "s|echo 'src/gz %d_core %U/targets/%S/packages';|echo 'src/gz %d_core %U/\${PACKAGES_OUT}';|" include/feeds.mk
+            
+            # Update OPKG base package path
+            sed -i "s|echo 'src/gz %d_base %U/packages/%A/base';|echo 'src/gz %d_base \${IWRT_OPKG_LINK}/packages/%A/base';|" include/feeds.mk
+            
+            # Update OPKG feed package paths
+            sed -i "s|echo '\$(if \$(filter m,\$(CONFIG_FEED_\$(feed))),# )src/gz %d_\$(feed) %U/packages/%A/\$(feed)';|echo '\$(if \$(filter m,\$(CONFIG_FEED_\$(feed))),# )src/gz %d_\$(feed) \${IWRT_OPKG_LINK}/packages/%A/\$(feed)';|" include/feeds.mk
+            
+            # Update APK core package path
+            sed -i "s|echo '%U/targets/%S/packages/packages.adb';|echo '%U/\${PACKAGES_OUT}/packages.adb';|" include/feeds.mk
+            
+            # Update APK base package path
+            sed -i "s|echo '%U/packages/%A/base/packages.adb';|echo '\${OWRT_APK_LINK}/%A/base/packages.adb';|" include/feeds.mk
+            
+            # Update APK feed package paths
+            sed -i "s|echo '\$(if \$(filter m,\$(CONFIG_FEED_\$(feed))),# )%U/packages/%A/\$(feed)/packages.adb';|echo '\$(if \$(filter m,\$(CONFIG_FEED_\$(feed))),# )\${OWRT_APK_LINK}/%A/\$(feed)/packages.adb';|" include/feeds.mk
+            
+            echo "feeds.mk patched for ImmortalWRT (OPKG: $OPKG_LINK, APK: $APK_LINK)"
+          else
+            # OpenWRT style patching (APK only)
+            # Update APK core package path
+            sed -i "s|echo '%U/\$(DATE)_\$(VERSION_CODE)_\$(BRANCH)/targets/%S/packages/packages.adb';|echo '%U/\${PACKAGES_OUT}/packages.adb';|" include/feeds.mk
+            echo "feeds.mk patched for OpenWRT (APK)"
+          fi
 
       - name: Configure firmware
         run: |
