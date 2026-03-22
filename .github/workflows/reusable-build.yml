@@ -118,6 +118,8 @@ jobs:
         working-directory: /workdir
         run: |
           df -hT $PWD
+          # Clean up any existing directory from previous runs
+          rm -rf ${{ inputs.source_dir }}
           git clone --branch ${{ inputs.repo_branch }} ${{ inputs.repo_url }} ${{ inputs.source_dir }}
           ln -sf /workdir/${{ inputs.source_dir }} $GITHUB_WORKSPACE/${{ inputs.source_dir }}
 
