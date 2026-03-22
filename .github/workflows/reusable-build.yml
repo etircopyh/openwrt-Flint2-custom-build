@@ -151,7 +151,7 @@ jobs:
           ./scripts/feeds install -a
 
       - name: Patch feeds.mk for custom package repository
-        if: inputs.patch_feeds_mk
+        if: inputs.patch_feeds_mk == true
         run: |
           cd ${{ inputs.source_dir }}
           
