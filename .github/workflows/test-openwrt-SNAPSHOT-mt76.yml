@@ -195,7 +195,12 @@ jobs:
           fi
           echo "Build directory: $BUILD_DIR"
 
-          # Determine target
+          # Debug: show full directory structure
+          echo "=== Directory structure ==="
+          find "$BUILD_DIR" -type d -name "packages" 2>/dev/null || true
+          echo "=== End structure ==="
+
+          # Determine target from targets directory
           TARGET_PKG_DIR=$(find "$BUILD_DIR/targets" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | head -1 | sed 's|.*/targets/||')
           if [ -z "$TARGET_PKG_DIR" ]; then
             echo "No target directory found"
@@ -204,29 +209,52 @@ jobs:
           fi
           echo "Target: $TARGET_PKG_DIR"
 
-          # Check for packages
-          PACKAGES_SRC="${BUILD_DIR}/targets/${TARGET_PKG_DIR}/packages"
-          if [ ! -d "$PACKAGES_SRC" ]; then
-            echo "No packages directory found"
-            echo "package_count=0" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          PACKAGE_COUNT=$(find "$PACKAGES_SRC" -name "*.ipk" -type f 2>/dev/null | wc -l)
-          echo "Found $PACKAGE_COUNT packages"
-
-          if [ "$PACKAGE_COUNT" -eq 0 ]; then
-            echo "package_count=0" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
           # Create output directory
           PACKAGES_DIR_NAME="${DATE}_openwrt_${VERSION_CODE}_${OpenWRT_VERSION}-kernel-${KERNEL_VERSION}"
           PACKAGES_OUT="${PACKAGES_DIR_NAME}/targets/${TARGET_PKG_DIR}/packages"
           mkdir -p "$PACKAGES_OUT"
 
-          # Copy packages
-          cp -v "$PACKAGES_SRC"/*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
+          TOTAL_PACKAGES=0
+
+          # Copy packages from targets/<arch>/<subtarget>/packages/ (kernel packages)
+          TARGETS_PKG_SRC="${BUILD_DIR}/targets/${TARGET_PKG_DIR}/packages"
+          if [ -d "$TARGETS_PKG_SRC" ]; then
+            COUNT=$(find "$TARGETS_PKG_SRC" -name "*.ipk" -type f 2>/dev/null | wc -l)
+            echo "Found $COUNT packages in targets/${TARGET_PKG_DIR}/packages"
+            if [ "$COUNT" -gt 0 ]; then
+              cp -v "$TARGETS_PKG_SRC"/*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
+              TOTAL_PACKAGES=$((TOTAL_PACKAGES + COUNT))
+            fi
+          fi
+
+          # Copy packages from packages/<arch>/ (main packages - this is where most packages are!)
+          for PKG_ARCH_DIR in "$BUILD_DIR/packages"/*; do
+            if [ -d "$PKG_ARCH_DIR" ]; then
+              ARCH_NAME=$(basename "$PKG_ARCH_DIR")
+              echo "Checking packages/$ARCH_NAME..."
+              for FEED_DIR in "$PKG_ARCH_DIR"/*; do
+                if [ -d "$FEED_DIR" ]; then
+                  COUNT=$(find "$FEED_DIR" -name "*.ipk" -type f 2>/dev/null | wc -l)
+                  if [ "$COUNT" -gt 0 ]; then
+                    echo "Found $COUNT packages in packages/$ARCH_NAME/$(basename "$FEED_DIR")"
+                    cp -v "$FEED_DIR"/*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
+                    TOTAL_PACKAGES=$((TOTAL_PACKAGES + COUNT))
+                  fi
+                fi
+              done
+            fi
+          done
+
+          echo "Total packages found: $TOTAL_PACKAGES"
+
+          if [ "$TOTAL_PACKAGES" -eq 0 ]; then
+            echo "package_count=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Deduplicate (same package might exist in multiple feeds)
+          PACKAGE_COUNT=$(find "$PACKAGES_OUT" -name "*.ipk" -type f 2>/dev/null | wc -l)
+          echo "Unique packages after copy: $PACKAGE_COUNT"
 
           # Create README
           REPO_NAME="${{ github.repository }}"
@@ -294,8 +322,9 @@ jobs:
             bin/*/targets/*/*/*.bin
             bin/*/targets/*/*/*.buildinfo
             bin/*/targets/*/*/*.manifest
-            bin/*/targets/*/sha256sums
+            bin/*/targets/*/*/sha256sums
           retention-days: 7
+          if-no-files-found: warn
 
   # ============================================
   # STAGE 3: Deploy
@@ -382,5 +411,5 @@ jobs:
             firmware/bin/*/targets/*/*/*.bin
             firmware/bin/*/targets/*/*/*.buildinfo
             firmware/bin/*/targets/*/*/*.manifest
-            firmware/bin/*/targets/*/sha256sums
-            openwrt-packages-*.tar.gz
+            firmware/bin/*/targets/*/*/sha256sums
+            *.tar.gz

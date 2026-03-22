@@ -168,23 +168,55 @@ jobs:
             exit 0
           fi
 
+          echo "Build directory: $BUILD_DIR"
+
+          # Debug: show package directories
+          echo "=== Package directories found ==="
+          find "$BUILD_DIR" -type d -name "packages" 2>/dev/null || true
+          echo "=== End ==="
+
+          TOTAL_PACKAGES=0
+
+          # Copy packages from targets/<arch>/<subtarget>/packages/ (kernel packages)
           TARGET_DIR="${BUILD_DIR}/targets/${TARGET_PKG_DIR}"
-          if [ ! -d "${TARGET_DIR}/packages" ]; then
-            echo "No packages directory found at ${TARGET_DIR}/packages"
-            echo "PACKAGES_CREATED=false" >> $GITHUB_OUTPUT
-            exit 0
+          if [ -d "${TARGET_DIR}/packages" ]; then
+            COUNT=$(find "${TARGET_DIR}/packages" -name "*.ipk" -type f 2>/dev/null | wc -l)
+            echo "Found $COUNT packages in targets/${TARGET_PKG_DIR}/packages"
+            if [ "$COUNT" -gt 0 ]; then
+              cp -v "${TARGET_DIR}/packages/"*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
+              TOTAL_PACKAGES=$((TOTAL_PACKAGES + COUNT))
+            fi
           fi
 
-          PACKAGE_COUNT=$(find "${TARGET_DIR}/packages" -type f 2>/dev/null | wc -l)
-          echo "Found $PACKAGE_COUNT packages"
+          # Copy packages from packages/<arch>/ (main packages - this is where most packages are!)
+          for PKG_ARCH_DIR in "$BUILD_DIR/packages"/*; do
+            if [ -d "$PKG_ARCH_DIR" ]; then
+              ARCH_NAME=$(basename "$PKG_ARCH_DIR")
+              echo "Checking packages/$ARCH_NAME..."
+              for FEED_DIR in "$PKG_ARCH_DIR"/*; do
+                if [ -d "$FEED_DIR" ]; then
+                  COUNT=$(find "$FEED_DIR" -name "*.ipk" -type f 2>/dev/null | wc -l)
+                  if [ "$COUNT" -gt 0 ]; then
+                    echo "Found $COUNT packages in packages/$ARCH_NAME/$(basename "$FEED_DIR")"
+                    cp -v "$FEED_DIR"/*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
+                    TOTAL_PACKAGES=$((TOTAL_PACKAGES + COUNT))
+                  fi
+                fi
+              done
+            fi
+          done
 
-          if [ "$PACKAGE_COUNT" -eq 0 ]; then
+          echo "Total packages found: $TOTAL_PACKAGES"
+
+          if [ "$TOTAL_PACKAGES" -eq 0 ]; then
             echo "No packages to deploy"
             echo "PACKAGES_CREATED=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          cp -r "${TARGET_DIR}/packages/"* "$PACKAGES_OUT/" || true
+          # Count unique packages (dedupe)
+          PACKAGE_COUNT=$(find "${PACKAGES_OUT}" -name "*.ipk" -type f 2>/dev/null | wc -l)
+          echo "Unique packages: $PACKAGE_COUNT"
 
           # Create README
           {
