@@ -10,9 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DEVICE_NAME: Flint2_GL-MT6000
-  FIRMWARE_NAME: immortalwrt-2102-hanwckf
-  CONFIG_FILE: config.immortalwrt-2102-hanwckf
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -20,7 +18,7 @@ jobs:
     with:
       repo_url: https://github.com/hanwckf/immortalwrt-mt798x.git
       repo_branch: openwrt-21.02
-      config_file: ${{ env.CONFIG_FILE }}
+      config_file: config.immortalwrt-2102-hanwckf
       source_dir: immortalwrt-mt798x
 
   prepare:
@@ -32,8 +30,8 @@ jobs:
       openwrt_version: ${{ needs.build.outputs.openwrt_version }}
       kernel_version: ${{ needs.build.outputs.kernel_version }}
       target_pkg_dir: ${{ needs.build.outputs.target_pkg_dir }}
-      firmware_name: ${{ env.FIRMWARE_NAME }}
-      device_name: ${{ env.DEVICE_NAME }}
+      firmware_name: immortalwrt-2102-hanwckf
+      device_name: Flint2_GL-MT6000
       source_branch: openwrt-21.02
 
   deploy:
@@ -41,8 +39,8 @@ jobs:
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       date: ${{ needs.build.outputs.date }}
-      firmware_name: ${{ env.FIRMWARE_NAME }}
-      device_name: ${{ env.DEVICE_NAME }}
+      firmware_name: immortalwrt-2102-hanwckf
+      device_name: Flint2_GL-MT6000
       openwrt_version: ${{ needs.build.outputs.openwrt_version }}
       kernel_version: ${{ needs.build.outputs.kernel_version }}
       buildinfo: ${{ needs.build.outputs.buildinfo }}

@@ -8,19 +8,15 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  REPO_URL: https://github.com/pesa1234/openwrt.git
-  REPO_BRANCH: next-r4.6.14.rss.mtk
-  DEVICE_NAME: Flint2_GL-MT6000
-  FIRMWARE_NAME: openwrt-snapshot-test-pesa1234
-  CONFIG_FILE: config.test-openwrt-snapshot-pesa1234
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
     uses: ./.github/workflows/reusable-build.yml
     with:
-      repo_url: ${{ env.REPO_URL }}
-      repo_branch: ${{ env.REPO_BRANCH }}
-      config_file: ${{ env.CONFIG_FILE }}
+      repo_url: https://github.com/pesa1234/openwrt.git
+      repo_branch: next-r4.6.14.rss.mtk
+      config_file: config.test-openwrt-snapshot-pesa1234
       source_dir: openwrt
 
   prepare:
@@ -32,17 +28,17 @@ jobs:
       openwrt_version: ${{ needs.build.outputs.openwrt_version }}
       kernel_version: ${{ needs.build.outputs.kernel_version }}
       target_pkg_dir: ${{ needs.build.outputs.target_pkg_dir }}
-      firmware_name: ${{ env.FIRMWARE_NAME }}
-      device_name: ${{ env.DEVICE_NAME }}
-      source_branch: ${{ env.REPO_BRANCH }}
+      firmware_name: openwrt-snapshot-test-pesa1234
+      device_name: Flint2_GL-MT6000
+      source_branch: next-r4.6.14.rss.mtk
 
   deploy:
     needs: [build, prepare]
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       date: ${{ needs.build.outputs.date }}
-      firmware_name: ${{ env.FIRMWARE_NAME }}
-      device_name: ${{ env.DEVICE_NAME }}
+      firmware_name: openwrt-snapshot-test-pesa1234
+      device_name: Flint2_GL-MT6000
       openwrt_version: ${{ needs.build.outputs.openwrt_version }}
       kernel_version: ${{ needs.build.outputs.kernel_version }}
       buildinfo: ${{ needs.build.outputs.buildinfo }}

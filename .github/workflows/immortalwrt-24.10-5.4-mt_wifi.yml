@@ -8,9 +8,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DEVICE_NAME: Flint2_GL-MT6000
-  FIRMWARE_NAME: immortalwrt-2410-5.4-padavanonly
-  CONFIG_FILE: config.immortalwrt-2410-5.4-padavanonly
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -18,7 +16,7 @@ jobs:
     with:
       repo_url: https://github.com/padavanonly/immortalwrt-mt798x-24.10.git
       repo_branch: 2410
-      config_file: ${{ env.CONFIG_FILE }}
+      config_file: config.immortalwrt-2410-5.4-padavanonly
       source_dir: immortalwrt-mt798x-24.10
       patch_file: 903-fix-nft-reject-bridge.patch
       patch_target: target/linux/generic/backport-5.4
@@ -32,8 +30,8 @@ jobs:
       openwrt_version: ${{ needs.build.outputs.openwrt_version }}
       kernel_version: ${{ needs.build.outputs.kernel_version }}
       target_pkg_dir: ${{ needs.build.outputs.target_pkg_dir }}
-      firmware_name: ${{ env.FIRMWARE_NAME }}
-      device_name: ${{ env.DEVICE_NAME }}
+      firmware_name: immortalwrt-2410-5.4-padavanonly
+      device_name: Flint2_GL-MT6000
       source_branch: '2410'
 
   deploy:
@@ -41,8 +39,8 @@ jobs:
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       date: ${{ needs.build.outputs.date }}
-      firmware_name: ${{ env.FIRMWARE_NAME }}
-      device_name: ${{ env.DEVICE_NAME }}
+      firmware_name: immortalwrt-2410-5.4-padavanonly
+      device_name: Flint2_GL-MT6000
       openwrt_version: ${{ needs.build.outputs.openwrt_version }}
       kernel_version: ${{ needs.build.outputs.kernel_version }}
       buildinfo: ${{ needs.build.outputs.buildinfo }}
