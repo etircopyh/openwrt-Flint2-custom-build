@@ -1,0 +1,118 @@
+name: Reusable Deploy
+
+on:
+  workflow_call:
+    inputs:
+      date:
+        required: true
+        type: string
+      firmware_name:
+        required: true
+        type: string
+      device_name:
+        required: true
+        type: string
+      openwrt_version:
+        required: true
+        type: string
+      kernel_version:
+        required: true
+        type: string
+      buildinfo:
+        required: true
+        type: string
+      packages_dir_name:
+        required: false
+        type: string
+        default: ''
+      package_count:
+        required: false
+        type: string
+        default: '0'
+      packages_archive:
+        required: false
+        type: string
+        default: ''
+
+    secrets:
+      gh_token:
+        required: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.gh_token }}
+
+      - name: Download packages for deploy
+        if: inputs.package_count != '0' && inputs.packages_dir_name != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-deploy-${{ inputs.date }}
+          path: .
+
+      - name: Download packages archive
+        if: inputs.package_count != '0' && inputs.packages_archive != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-archive-${{ inputs.date }}
+          path: .
+
+      - name: Download firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-release-${{ inputs.date }}
+          path: firmware
+
+      - name: Deploy packages to repo
+        if: inputs.package_count != '0' && inputs.packages_dir_name != ''
+        run: |
+          git config --global user.name 'OpenWRT Build Bot'
+          git config --global user.email 'actions@github.com'
+
+          # Remove old symlink if exists
+          rm -f packages-output-${{ inputs.firmware_name }}
+
+          git pull origin ${{ github.ref_name }} --rebase --autostash || true
+
+          git add "${{ inputs.packages_dir_name }}/"
+          git add packages-output-${{ inputs.firmware_name }}
+
+          if ! git diff --staged --quiet; then
+            git commit -m "[ci skip] Update packages (${{ inputs.package_count }} .ipk files) - ${{ inputs.firmware_name }}"
+            git push origin ${{ github.ref_name }}
+            echo "Successfully deployed ${{ inputs.package_count }} packages"
+          else
+            echo "No changes detected in packages"
+          fi
+
+      - name: Build release tag
+        run: |
+          NOW=$(date +%F-%H%M)
+          echo "release_tag=${{ inputs.device_name }}-${{ inputs.date }}" >> $GITHUB_ENV
+          echo "release_title=${{ inputs.device_name }} - OpenWRT ${{ inputs.openwrt_version }} - Kernel ${{ inputs.kernel_version }}" >> $GITHUB_ENV
+
+      - name: Create release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ secrets.gh_token }}
+          prerelease: false
+          title: "${{ env.release_title }}"
+          automatic_release_tag: "${{ inputs.buildinfo }}"
+          files: |
+            firmware/bin/*/targets/*/*/*.bin
+            firmware/bin/*/targets/*/*/*.buildinfo
+            firmware/bin/*/targets/*/*/*.manifest
+            firmware/bin/*/targets/*/*/sha256sums
+            *.tar.gz

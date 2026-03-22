@@ -7,18 +7,47 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DEVICE_NAME: Flint2_GL-MT6000
+  FIRMWARE_NAME: immortalwrt-2410-test-padavanonly
+  CONFIG_FILE: config.test-padavanonly-24
+
 jobs:
   build:
     uses: ./.github/workflows/reusable-build.yml
     with:
       repo_url: https://github.com/padavanonly/immortalwrt-mt798x-24.10.git
       repo_branch: 2410
-      config_file: config.test-padavanonly-24
-      device_name: Flint2_GL-MT6000
-      firmware_name: immortalwrt-2410-test-padavanonly
+      config_file: ${{ env.CONFIG_FILE }}
       source_dir: immortalwrt-mt798x-24.10
       patch_file: 903-fix-nft-reject-bridge.patch
       patch_target: target/linux/generic/backport-5.4
-      kernel_version: 5.4
+
+  prepare:
+    needs: build
+    uses: ./.github/workflows/reusable-prepare-packages.yml
+    with:
+      date: ${{ needs.build.outputs.date }}
+      version_code: ${{ needs.build.outputs.version_code }}
+      openwrt_version: ${{ needs.build.outputs.openwrt_version }}
+      kernel_version: ${{ needs.build.outputs.kernel_version }}
+      target_pkg_dir: ${{ needs.build.outputs.target_pkg_dir }}
+      firmware_name: ${{ env.FIRMWARE_NAME }}
+      device_name: ${{ env.DEVICE_NAME }}
+      source_branch: '2410'
+
+  deploy:
+    needs: [build, prepare]
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      date: ${{ needs.build.outputs.date }}
+      firmware_name: ${{ env.FIRMWARE_NAME }}
+      device_name: ${{ env.DEVICE_NAME }}
+      openwrt_version: ${{ needs.build.outputs.openwrt_version }}
+      kernel_version: ${{ needs.build.outputs.kernel_version }}
+      buildinfo: ${{ needs.build.outputs.buildinfo }}
+      packages_dir_name: ${{ needs.prepare.outputs.packages_dir_name }}
+      package_count: ${{ needs.prepare.outputs.package_count }}
+      packages_archive: ${{ needs.prepare.outputs.packages_archive }}
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
