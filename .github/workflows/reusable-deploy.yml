@@ -61,6 +61,7 @@ jobs:
         with:
           name: packages-deploy-${{ inputs.date }}
           path: .
+          retry-count: 10
 
       - name: Download packages archive
         if: inputs.package_count != '0' && inputs.packages_archive != ''
@@ -68,12 +69,14 @@ jobs:
         with:
           name: packages-archive-${{ inputs.date }}
           path: .
+          retry-count: 10
 
       - name: Download firmware
         uses: actions/download-artifact@v4
         with:
           name: firmware-release-${{ inputs.date }}
           path: firmware
+          retry-count: 10
 
       - name: Deploy packages to repo
         if: inputs.package_count != '0' && inputs.packages_dir_name != ''

@@ -272,3 +272,4 @@ jobs:
           name: openwrt-build-${{ steps.version.outputs.date }}
           path: ${{ inputs.source_dir }}/bin/
           retention-days: 7
+          compression-level: 6
