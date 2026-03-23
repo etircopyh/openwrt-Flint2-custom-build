@@ -196,6 +196,7 @@ jobs:
             ${{ steps.packages.outputs.packages_dir_name }}
             packages-output-${{ inputs.firmware_name }}
           retention-days: 7
+          compression-level: 9
 
       - name: Upload packages archive
         if: steps.packages.outputs.package_count != '0'
@@ -204,6 +205,7 @@ jobs:
           name: packages-archive-${{ inputs.date }}
           path: ${{ steps.packages.outputs.packages_archive }}
           retention-days: 7
+          compression-level: 9
 
       - name: Upload firmware for release
         uses: actions/upload-artifact@v4
@@ -216,3 +218,4 @@ jobs:
             bin/*/targets/*/*/sha256sums
           retention-days: 7
           if-no-files-found: warn
+          compression-level: 6
