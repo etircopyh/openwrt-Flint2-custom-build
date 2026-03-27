@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
+          token: ${{ secrets.WORKFLOW_PUSH_TOKEN || github.token }}
 
       - name: Check for new branches
         id: check
@@ -36,7 +36,7 @@ jobs:
 
           # Fetch all branches from upstream
           echo "Fetching branches from $UPSTREAM_REPO..."
-          BRANCHES=$(curl -s -H "Authorization: token ${{ secrets.WORKFLOW_PUSH_TOKEN }}" \
+          BRANCHES=$(curl -s -H "Authorization: token ${{ secrets.WORKFLOW_PUSH_TOKEN || github.token }}" \
             "https://api.github.com/repos/$UPSTREAM_REPO/branches?per_page=100" | \
             jq -r '.[].name' | grep -E '^next-r[0-9]+\.[0-9]+' | sort -V)
 
@@ -114,7 +114,7 @@ jobs:
         uses: benc-uk/workflow-dispatch@v1
         with:
           workflow: OpenWRT SNAPSHOT Firmware mt76 driver (pesa1234)
-          token: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
+          token: ${{ secrets.WORKFLOW_PUSH_TOKEN || github.token }}
           inputs: '{"branch_override": "${{ steps.check.outputs.new_branch }}"}'
 
       - name: Summary
