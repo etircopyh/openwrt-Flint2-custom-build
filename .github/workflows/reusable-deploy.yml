@@ -87,6 +87,9 @@ jobs:
 
           git pull origin ${{ github.ref_name }} --rebase --autostash || true
 
+          # Recreate symlink after artifact download
+          ln -s "${{ inputs.packages_dir_name }}" "packages-output-${{ inputs.firmware_name }}"
+
           git add "${{ inputs.packages_dir_name }}/"
           git add packages-output-${{ inputs.firmware_name }}
 
