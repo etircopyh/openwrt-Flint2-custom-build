@@ -15,7 +15,6 @@ jobs:
     permissions:
       contents: write
       actions: write
-      workflows: write
     outputs:
       new_branch: ${{ steps.check.outputs.new_branch }}
       current_branch: ${{ steps.check.outputs.current_branch }}
