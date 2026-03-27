@@ -68,14 +68,38 @@ jobs:
         run: |
           NEW_BRANCH="${{ steps.check.outputs.new_branch }}"
           CURRENT_BRANCH="${{ steps.check.outputs.current_branch }}"
+          export NEW_BRANCH CURRENT_BRANCH WORKFLOW_FILE
 
           echo "Updating workflow from $CURRENT_BRANCH to $NEW_BRANCH"
 
-          # Update the repo_branch in workflow file - replace the default value in the expression
-          sed -i "s/repo_branch:.*|| '$CURRENT_BRANCH'/repo_branch: \${{ inputs.branch_override || '$NEW_BRANCH' }}/" "$WORKFLOW_FILE"
+          # Update the branch defaults in workflow expressions safely
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import os
+
+          workflow_file = Path(os.environ["WORKFLOW_FILE"])
+          new_branch = os.environ["NEW_BRANCH"]
+          text = workflow_file.read_text()
+
+          text = re.sub(
+              r"repo_branch:\s*\$\{\{\s*inputs\.branch_override\s*\|\|\s*'[^']*'\s*\}\}",
+              "repo_branch: ${{ inputs.branch_override || '" + new_branch + "' }}",
+              text,
+              count=1,
+          )
+          text = re.sub(
+              r"source_branch:\s*\$\{\{\s*inputs\.branch_override\s*\|\|\s*'[^']*'\s*\}\}",
+              "source_branch: ${{ inputs.branch_override || '" + new_branch + "' }}",
+              text,
+              count=1,
+          )
+
+          workflow_file.write_text(text)
+          PY
 
           # Verify the change
-          grep "repo_branch:" "$WORKFLOW_FILE" | head -1
+          grep -E "repo_branch:|source_branch:" "$WORKFLOW_FILE"
 
       - name: Update README
         if: steps.check.outputs.should_update == 'true'
@@ -114,7 +138,7 @@ jobs:
         uses: benc-uk/workflow-dispatch@v1
         with:
           workflow: OpenWRT SNAPSHOT Firmware mt76 driver (pesa1234)
-          token: ${{ secrets.WORKFLOW_PUSH_TOKEN || github.token }}
+          token: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
           inputs: '{"branch_override": "${{ steps.check.outputs.new_branch }}"}'
 
       - name: Summary

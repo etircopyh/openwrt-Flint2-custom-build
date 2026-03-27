@@ -24,15 +24,15 @@ on:
       packages_dir_name:
         required: false
         type: string
-        default: ''
+        default: ""
       package_count:
         required: false
         type: string
-        default: '0'
+        default: "0"
       packages_archive:
         required: false
         type: string
-        default: ''
+        default: ""
 
     secrets:
       gh_token:

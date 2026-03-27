@@ -36,7 +36,7 @@ jobs:
       target_pkg_dir: ${{ needs.build.outputs.target_pkg_dir }}
       firmware_name: immortalwrt-2410-test-padavanonly
       device_name: Flint2_GL-MT6000
-      source_branch: '2410'
+      source_branch: "2410"
 
   deploy:
     needs: [build, prepare]

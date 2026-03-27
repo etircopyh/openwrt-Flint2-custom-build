@@ -2,21 +2,21 @@ name: Cleanup Old Releases
 
 on:
   schedule:
-    - cron: '0 7 * * 0'
+    - cron: "0 7 * * 0"
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run - show what would be deleted without deleting'
+        description: "Dry run - show what would be deleted without deleting"
         required: false
-        default: 'false'
+        default: "false"
         type: choice
         options:
-          - 'true'
-          - 'false'
+          - "true"
+          - "false"
       keep_releases:
-        description: 'Number of recent releases to keep'
+        description: "Number of recent releases to keep"
         required: false
-        default: '10'
+        default: "10"
         type: string
 
 env:
