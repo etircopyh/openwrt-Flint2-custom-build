@@ -27,17 +27,17 @@ on:
       source_branch:
         required: false
         type: string
-        default: ''
+        default: ""
 
     outputs:
       package_count:
-        description: 'Number of packages found'
+        description: "Number of packages found"
         value: ${{ jobs.prepare.outputs.package_count }}
       packages_dir_name:
-        description: 'Output directory name for packages'
+        description: "Output directory name for packages"
         value: ${{ jobs.prepare.outputs.packages_dir_name }}
       packages_archive:
-        description: 'Archive filename'
+        description: "Archive filename"
         value: ${{ jobs.prepare.outputs.packages_archive }}
 
 env:
