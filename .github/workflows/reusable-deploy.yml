@@ -74,7 +74,6 @@ jobs:
         with:
           name: firmware-release-${{ inputs.date }}
           path: firmware
-          if-no-files-found: error
 
       - name: Deploy packages to repo
         if: inputs.package_count != '0' && inputs.packages_dir_name != ''

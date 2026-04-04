@@ -215,5 +215,4 @@ jobs:
             upload-artifact/*/targets/*/*/*.manifest
             upload-artifact/*/targets/*/*/sha256sums
           retention-days: 7
-          if-no-files-found: error
           compression-level: 6
