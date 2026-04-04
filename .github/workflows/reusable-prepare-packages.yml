@@ -65,13 +65,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: openwrt-build-${{ inputs.date }}
-          path: bin
+          path: .
 
       - name: Prepare packages
         id: packages
         run: |
           # Find build directory
-          BUILD_DIR=$(find bin -maxdepth 1 -type d -name "*_*" 2>/dev/null | head -1)
+          BUILD_DIR=$(find upload-artifact -maxdepth 1 -type d -name "*_*" 2>/dev/null | head -1)
           if [ -z "$BUILD_DIR" ]; then
             echo "No build directory found"
             echo "package_count=0" >> $GITHUB_OUTPUT
@@ -210,10 +210,10 @@ jobs:
         with:
           name: firmware-release-${{ inputs.date }}
           path: |
-            bin/*/targets/*/*/*.bin
-            bin/*/targets/*/*/*.buildinfo
-            bin/*/targets/*/*/*.manifest
-            bin/*/targets/*/*/sha256sums
+            upload-artifact/*/targets/*/*/*.bin
+            upload-artifact/*/targets/*/*/*.buildinfo
+            upload-artifact/*/targets/*/*/*.manifest
+            upload-artifact/*/targets/*/*/sha256sums
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
           compression-level: 6
