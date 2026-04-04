@@ -65,25 +65,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: openwrt-build-${{ inputs.date }}
-          path: .
-
-      - name: Debug downloaded artifact
-        run: |
-          echo "=== Downloaded files ==="
-          find . -maxdepth 4 -type f \( -name "*.bin" -o -name "*.buildinfo" -o -name "sha256sums" \) 2>/dev/null || echo "No firmware files found"
-          echo "=== Top-level directories ==="
-          ls -la .
-          echo "=== Directory structure ==="
-          find . -maxdepth 3 -type d 2>/dev/null | head -30
+          path: bin
 
       - name: Prepare packages
         id: packages
         run: |
-          # Find build directory - try date pattern first, then any dir with targets/
-          BUILD_DIR=$(find . -maxdepth 2 -type d -name "*_*" 2>/dev/null | head -1)
-          if [ -z "$BUILD_DIR" ]; then
-            BUILD_DIR=$(find . -maxdepth 2 -type d -name "targets" -exec dirname {} \; 2>/dev/null | head -1)
-          fi
+          # Find build directory (matches old working workflow)
+          BUILD_DIR=$(ls -d bin/$(date +"%Y-%m-%d")_* 2>/dev/null | head -1)
           if [ -z "$BUILD_DIR" ]; then
             echo "No build directory found"
             echo "package_count=0" >> $GITHUB_OUTPUT
@@ -217,14 +205,24 @@ jobs:
           retention-days: 7
           compression-level: 9
 
+      - name: Prepare firmware artifact
+        run: |
+          BUILD_DIR=$(ls -d bin/$(date +"%Y-%m-%d")_* 2>/dev/null | head -1)
+          if [ -z "$BUILD_DIR" ]; then
+            echo "No build directory found"
+            exit 1
+          fi
+          FIRMWARE_DIR="${BUILD_DIR}/targets/${{ inputs.target_pkg_dir }}"
+          cd "$FIRMWARE_DIR"
+          rm -rf packages
+          mkdir -p "$GITHUB_WORKSPACE/firmware-upload"
+          cp -a . "$GITHUB_WORKSPACE/firmware-upload/"
+          echo "FIRMWARE_DIR=$GITHUB_WORKSPACE/firmware-upload" >> $GITHUB_ENV
+
       - name: Upload firmware for release
         uses: actions/upload-artifact@v4
         with:
           name: firmware-release-${{ inputs.date }}
-          path: |
-            **/targets/*/*/*.bin
-            **/targets/*/*/*.buildinfo
-            **/targets/*/*/*.manifest
-            **/targets/*/*/sha256sums
+          path: firmware-upload/
           retention-days: 7
           compression-level: 6

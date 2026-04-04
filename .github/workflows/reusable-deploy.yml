@@ -114,8 +114,8 @@ jobs:
           title: "${{ env.release_title }}"
           automatic_release_tag: "${{ inputs.buildinfo }}"
           files: |
-            firmware/**/targets/*/*/*.bin
-            firmware/**/targets/*/*/*.buildinfo
-            firmware/**/targets/*/*/*.manifest
-            firmware/**/targets/*/*/sha256sums
+            firmware/*.bin
+            firmware/*.buildinfo
+            firmware/*.manifest
+            firmware/sha256sums
             *.tar.gz

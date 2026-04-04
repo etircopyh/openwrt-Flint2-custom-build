@@ -266,15 +266,10 @@ jobs:
           echo "BuildInfo: $BUILDINFO"
           echo "Target: $TARGET_PKG_DIR"
 
-      - name: Prepare for upload
-        run: |
-          mkdir -p upload-artifact
-          cp -a ${{ inputs.source_dir }}/bin/. upload-artifact/
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-build-${{ steps.version.outputs.date }}
-          path: upload-artifact/
+          path: ${{ inputs.source_dir }}/bin/
           retention-days: 7
           compression-level: 6
