@@ -86,6 +86,11 @@ jobs:
 
           git pull origin ${{ github.ref_name }} --rebase --autostash || true
 
+          if [ ! -d "${{ inputs.packages_dir_name }}" ] && [ -n "${{ inputs.packages_archive }}" ] && [ -f "${{ inputs.packages_archive }}" ]; then
+            mkdir -p "${{ inputs.packages_dir_name }}"
+            tar -xzf "${{ inputs.packages_archive }}" -C "${{ inputs.packages_dir_name }}"
+          fi
+
           if [ ! -d "${{ inputs.packages_dir_name }}" ]; then
             echo "Expected packages directory '${{ inputs.packages_dir_name }}' was not downloaded"
             find . -maxdepth 3 \( -type d -o -type l \) | sort | sed -n '1,200p'
