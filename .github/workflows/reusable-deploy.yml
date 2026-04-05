@@ -86,6 +86,12 @@ jobs:
 
           git pull origin ${{ github.ref_name }} --rebase --autostash || true
 
+          if [ ! -d "${{ inputs.packages_dir_name }}" ]; then
+            echo "Expected packages directory '${{ inputs.packages_dir_name }}' was not downloaded"
+            find . -maxdepth 3 \( -type d -o -type l \) | sort | sed -n '1,200p'
+            exit 1
+          fi
+
           # Recreate symlink after artifact download
           ln -s "${{ inputs.packages_dir_name }}" "packages-output-${{ inputs.firmware_name }}"
 
