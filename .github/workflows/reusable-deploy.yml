@@ -113,9 +113,8 @@ jobs:
 
       - name: Build release tag
         run: |
-          NOW=$(date +%F-%H%M)
           echo "release_tag=${{ inputs.device_name }}-${{ inputs.date }}" >> $GITHUB_ENV
-          echo "release_title=${{ inputs.device_name }} - OpenWRT ${{ inputs.openwrt_version }} - Kernel ${{ inputs.kernel_version }}" >> $GITHUB_ENV
+          echo "release_title=${{ inputs.date }}_OpenWRT-${{ inputs.openwrt_version }}_Kernel-${{ inputs.kernel_version }}_${{ inputs.device_name }}" >> $GITHUB_ENV
 
       - name: Create release
         uses: marvinpinto/action-automatic-releases@latest
