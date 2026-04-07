@@ -23,7 +23,7 @@ jobs:
     uses: ./.github/workflows/reusable-build.yml
     with:
       repo_url: https://github.com/pesa1234/openwrt.git
-      repo_branch: ${{ inputs.branch_override || 'next-r4.8.0.rss.mtk' }}
+      repo_branch: next-r4.8.0.rss.mtk-test6.18
       config_file: config.openwrt-snapshot-pesa1234
       source_dir: openwrt
       patch_feeds_mk: true
@@ -40,7 +40,7 @@ jobs:
       target_pkg_dir: ${{ needs.build.outputs.target_pkg_dir }}
       firmware_name: openwrt-snapshot-pesa1234
       device_name: Flint2_GL-MT6000
-      source_branch: ${{ inputs.branch_override || 'next-r4.7.4.rss.mtk' }}
+      source_branch: next-r4.8.0.rss.mtk-test6.18
 
   deploy:
     needs: [build, prepare]
