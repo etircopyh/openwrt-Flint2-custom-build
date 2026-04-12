@@ -217,9 +217,16 @@ jobs:
 
           # OpenWRT version
           OPENWRT_VERSION="SNAPSHOT"
-          if [ -f "include/version.mk" ]; then
-            VERSION_FROM_FILE=$(grep -m1 "VERSION_NUMBER" include/version.mk 2>/dev/null | cut -d= -f2 | tr -d ' ' || echo "")
-            if [ -n "$VERSION_FROM_FILE" ]; then
+          # Try config value first
+          CONFIG_VERSION=$(grep '^CONFIG_VERSION_NUMBER=' .config 2>/dev/null | cut -d= -f2 | tr -d '" ')
+          if [ -n "$CONFIG_VERSION" ]; then
+            OPENWRT_VERSION="$CONFIG_VERSION"
+          fi
+          # If config doesn't have it, try include/version.mk (literal values only, no make variable refs)
+          if [ "$OPENWRT_VERSION" = "SNAPSHOT" ] && [ -f "include/version.mk" ]; then
+            VERSION_FROM_FILE=$(grep -m1 '^VERSION_NUMBER:=' include/version.mk 2>/dev/null | sed -n 's/^VERSION_NUMBER:=//p' | tr -d ' ')
+            # Skip if it's a make variable reference like $(CONFIG_...)
+            if [ -n "$VERSION_FROM_FILE" ] && ! echo "$VERSION_FROM_FILE" | grep -q '^\$('; then
               OPENWRT_VERSION="$VERSION_FROM_FILE"
             fi
           fi
