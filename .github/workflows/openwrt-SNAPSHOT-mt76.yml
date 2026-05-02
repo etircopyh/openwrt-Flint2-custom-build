@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       branch_override:
-        description: "Override the default branch (e.g., next-r4.8.1.rss.mtk)"
+        description: "Override the default branch (e.g., next-r4.8.2.rss.mtk)"
         required: false
         type: string
   schedule:
@@ -23,7 +23,7 @@ jobs:
     uses: ./.github/workflows/reusable-build.yml
     with:
       repo_url: https://github.com/pesa1234/openwrt.git
-      repo_branch: next-r4.8.0.rss.mtk-test6.18
+      repo_branch: next-r4.8.2.rss.mtk
       config_file: config.openwrt-snapshot-pesa1234
       source_dir: openwrt
       patch_feeds_mk: true
