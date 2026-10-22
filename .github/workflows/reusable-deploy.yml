@@ -55,13 +55,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.gh_token }}
 
-      - name: Download packages for deploy
-        if: inputs.package_count != '0' && inputs.packages_dir_name != ''
-        uses: actions/download-artifact@v4
-        with:
-          name: packages-deploy-${{ inputs.date }}
-          path: .
-
       - name: Download packages archive
         if: inputs.package_count != '0' && inputs.packages_archive != ''
         uses: actions/download-artifact@v4
@@ -81,30 +74,29 @@ jobs:
           git config --global user.name 'OpenWRT Build Bot'
           git config --global user.email 'actions@github.com'
 
-          # Remove old symlink if exists
-          rm -f packages-output-${{ inputs.firmware_name }}
-
           git pull origin ${{ github.ref_name }} --rebase --autostash || true
 
-          if [ ! -d "${{ inputs.packages_dir_name }}" ] && [ -n "${{ inputs.packages_archive }}" ] && [ -f "${{ inputs.packages_archive }}" ]; then
-            mkdir -p "${{ inputs.packages_dir_name }}"
-            tar -xzf "${{ inputs.packages_archive }}" -C "${{ inputs.packages_dir_name }}"
-          fi
-
-          if [ ! -d "${{ inputs.packages_dir_name }}" ]; then
-            echo "Expected packages directory '${{ inputs.packages_dir_name }}' was not downloaded"
-            find . -maxdepth 3 \( -type d -o -type l \) | sort | sed -n '1,200p'
+          PACKAGES_ARCHIVE="${{ inputs.packages_archive }}"
+          PACKAGES_DIR="${{ inputs.packages_dir_name }}"
+          if [ -z "$PACKAGES_ARCHIVE" ] || [ ! -f "$PACKAGES_ARCHIVE" ]; then
+            echo "Missing packages archive '$PACKAGES_ARCHIVE'" >&2
             exit 1
           fi
 
-          # Recreate symlink after artifact download
-          ln -s "${{ inputs.packages_dir_name }}" "packages-output-${{ inputs.firmware_name }}"
+          # Replace the stable feed directory with this build's contents.
+          rm -rf "$PACKAGES_DIR"
+          mkdir -p "$PACKAGES_DIR"
+          tar -xzf "$PACKAGES_ARCHIVE" -C "$PACKAGES_DIR"
 
-          git add "${{ inputs.packages_dir_name }}/"
+          # Recreate symlink after replacing the directory.
+          rm -f "packages-output-${{ inputs.firmware_name }}"
+          ln -s "$PACKAGES_DIR" "packages-output-${{ inputs.firmware_name }}"
+
+          git add "$PACKAGES_DIR/"
           git add packages-output-${{ inputs.firmware_name }}
 
           if ! git diff --staged --quiet; then
-            git commit -m "[ci skip] Update packages (${{ inputs.package_count }} .ipk files) - ${{ inputs.firmware_name }}"
+            git commit -m "[ci skip] Update packages (${{ inputs.package_count }} packages) - ${{ inputs.firmware_name }}"
             git push origin ${{ github.ref_name }}
             echo "Successfully deployed ${{ inputs.package_count }} packages"
           else
@@ -113,7 +105,7 @@ jobs:
 
       - name: Build release tag
         run: |
-          echo "release_tag=${{ inputs.device_name }}-${{ inputs.date }}" >> $GITHUB_ENV
+          echo "release_tag=${{ inputs.firmware_name }}-${{ inputs.date }}" >> $GITHUB_ENV
           echo "release_title=${{ inputs.date }}_OpenWRT-${{ inputs.openwrt_version }}_Kernel-${{ inputs.kernel_version }}_${{ inputs.device_name }}" >> $GITHUB_ENV
 
       - name: Create release
@@ -122,7 +114,7 @@ jobs:
           repo_token: ${{ secrets.gh_token }}
           prerelease: false
           title: "${{ env.release_title }}"
-          automatic_release_tag: "${{ inputs.buildinfo }}"
+          automatic_release_tag: "${{ env.release_tag }}"
           files: |
             firmware/*.bin
             firmware/*.buildinfo

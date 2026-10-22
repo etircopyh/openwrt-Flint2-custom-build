@@ -12,15 +12,21 @@ on:
       config_file:
         required: true
         type: string
+      firmware_name:
+        description: "Package feed name, e.g. openwrt-snapshot-pesa1234"
+        required: true
+        type: string
       source_dir:
         required: false
         type: string
         default: "openwrt"
       patch_file:
+        description: "Patch file in the repository root"
         required: false
         type: string
         default: ""
       patch_target:
+        description: "Path under the source tree to copy the patch into (file or directory)"
         required: false
         type: string
         default: ""
@@ -78,14 +84,18 @@ jobs:
       actions: write
 
     outputs:
-      date: ${{ steps.version.outputs.date }}
-      version_code: ${{ steps.version.outputs.version_code }}
+      date: ${{ steps.builddate.outputs.date }}
+      version_code: ${{ steps.target.outputs.version_code }}
       openwrt_version: ${{ steps.version.outputs.openwrt_version }}
-      kernel_version: ${{ steps.version.outputs.kernel_version }}
+      kernel_version: ${{ steps.target.outputs.kernel_version }}
       buildinfo: ${{ steps.version.outputs.buildinfo }}
-      target_pkg_dir: ${{ steps.version.outputs.target_pkg_dir }}
+      target_pkg_dir: ${{ steps.target.outputs.target_pkg_dir }}
 
     steps:
+      - name: Set build date
+        id: builddate
+        run: echo "date=$(date -u +%Y%m%d_%H%M%S)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -106,14 +116,6 @@ jobs:
           sudo chown $USER:$GROUPS /workdir
           df -h
 
-      - name: Cache build downloads
-        uses: actions/cache@v4
-        with:
-          path: /workdir/${{ inputs.source_dir }}/dl
-          key: ${{ runner.os }}-${{ inputs.repo_branch }}-dl-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ inputs.repo_branch }}-dl-
-
       - name: Clone source
         working-directory: /workdir
         run: |
@@ -123,13 +125,23 @@ jobs:
           git clone --branch ${{ inputs.repo_branch }} ${{ inputs.repo_url }} ${{ inputs.source_dir }}
           ln -sf /workdir/${{ inputs.source_dir }} $GITHUB_WORKSPACE/${{ inputs.source_dir }}
 
+      - name: Cache build downloads
+        uses: actions/cache@v4
+        with:
+          path: /workdir/${{ inputs.source_dir }}/dl
+          key: ${{ runner.os }}-${{ inputs.repo_branch }}-dl-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ inputs.repo_branch }}-dl-
+
       - name: Apply patch if specified
         if: inputs.patch_file != '' && inputs.patch_target != ''
         run: |
-          if [ -f "${{ inputs.patch_file }}" ]; then
-            cp "${{ inputs.patch_file }}" "${{ inputs.source_dir }}/${{ inputs.patch_target }}"
-            echo "Applied patch: ${{ inputs.patch_file }}"
+          if [ ! -f "${{ inputs.patch_file }}" ]; then
+            echo "Patch file not found: ${{ inputs.patch_file }}" >&2
+            exit 1
           fi
+          cp "${{ inputs.patch_file }}" "${{ inputs.source_dir }}/${{ inputs.patch_target }}"
+          echo "Installed patch: ${{ inputs.patch_file }}"
 
       - name: Setup build environment
         run: |
@@ -150,10 +162,68 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Configure firmware
+        run: |
+          cp ${{ inputs.config_file }} ${{ inputs.source_dir }}/.config
+          cd ${{ inputs.source_dir }}
+          make defconfig
+
+      - name: Resolve build metadata
+        id: target
+        run: |
+          SOURCE_DIR="$GITHUB_WORKSPACE/${{ inputs.source_dir }}"
+          CONFIG_FILE="$SOURCE_DIR/.config"
+
+          TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' "$CONFIG_FILE" | cut -d= -f2 | tr -d '"')
+          TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' "$CONFIG_FILE" | cut -d= -f2 | tr -d '"')
+          if [ -z "$TARGET_BOARD" ] || [ -z "$TARGET_SUBTARGET" ]; then
+            echo "Could not determine target from $CONFIG_FILE" >&2
+            exit 1
+          fi
+          TARGET_PKG_DIR="${TARGET_BOARD}/${TARGET_SUBTARGET}"
+
+          VERSION_CODE=$(git -C "$SOURCE_DIR" rev-parse --short HEAD)
+
+          # Read the kernel from the target being built, not the first target
+          # that happens to match in a glob (other targets use other kernels).
+          KERNEL_MAKEFILE="$SOURCE_DIR/target/linux/${TARGET_BOARD}/Makefile"
+          if [ ! -f "$KERNEL_MAKEFILE" ]; then
+            echo "Kernel Makefile not found: $KERNEL_MAKEFILE" >&2
+            exit 1
+          fi
+          KERNEL_VERSION=""
+          if grep -q '^CONFIG_TESTING_KERNEL=y' "$CONFIG_FILE"; then
+            KERNEL_VERSION=$(grep -m1 '^KERNEL_TESTING_PATCHVER:' "$KERNEL_MAKEFILE" | cut -d= -f2 | tr -d ' ' | cut -d. -f1-2)
+          fi
+          if [ -z "$KERNEL_VERSION" ]; then
+            KERNEL_VERSION=$(grep -m1 '^KERNEL_PATCHVER:' "$KERNEL_MAKEFILE" | cut -d= -f2 | tr -d ' ' | cut -d. -f1-2)
+          fi
+          if [ -z "$KERNEL_VERSION" ]; then
+            echo "Could not determine kernel version from $KERNEL_MAKEFILE" >&2
+            exit 1
+          fi
+          KERNEL_VERSION=$(echo "$KERNEL_VERSION" | sed 's/[^0-9.]//g')
+
+          PACKAGE_DIR="${{ steps.builddate.outputs.date }}_${{ inputs.firmware_name }}_${VERSION_CODE}_kernel-${KERNEL_VERSION}"
+          PACKAGES_OUT="${PACKAGE_DIR}/targets/${TARGET_PKG_DIR}/packages"
+
+          {
+            echo "target_pkg_dir=$TARGET_PKG_DIR"
+            echo "version_code=$VERSION_CODE"
+            echo "kernel_version=$KERNEL_VERSION"
+            echo "package_dir=$PACKAGE_DIR"
+            echo "packages_out=$PACKAGES_OUT"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Package feed: $PACKAGES_OUT"
+
       - name: Patch feeds.mk for custom package repository
         if: inputs.patch_feeds_mk == true
         run: |
           cd ${{ inputs.source_dir }}
+
+          PACKAGES_OUT="${{ steps.target.outputs.packages_out }}"
+          export PACKAGES_OUT
 
           if [ "${{ inputs.feeds_mk_type }}" = "immortalwrt-opkg" ]; then
             # ImmortalWRT style patching with OPKG and APK links
@@ -164,7 +234,7 @@ jobs:
             sed -i '/^-include $(TMP_DIR)\/.packageauxvars$/a\\nIWRT_OPKG_LINK:='"$OPKG_LINK"'\nOWRT_APK_LINK:='"$APK_LINK"'' include/feeds.mk
 
             # Update OPKG core package path
-            sed -i "s|echo 'src/gz %d_core %U/targets/%S/packages';|echo 'src/gz %d_core %U/\${PACKAGES_OUT}';|" include/feeds.mk
+            sed -i "s|echo 'src/gz %d_core %U/targets/%S/packages';|echo 'src/gz %d_core %U/${PACKAGES_OUT}';|" include/feeds.mk
 
             # Update OPKG base package path
             sed -i "s|echo 'src/gz %d_base %U/packages/%A/base';|echo 'src/gz %d_base \${IWRT_OPKG_LINK}/packages/%A/base';|" include/feeds.mk
@@ -173,7 +243,7 @@ jobs:
             sed -i "s|echo '\$(if \$(filter m,\$(CONFIG_FEED_\$(feed))),# )src/gz %d_\$(feed) %U/packages/%A/\$(feed)';|echo '\$(if \$(filter m,\$(CONFIG_FEED_\$(feed))),# )src/gz %d_\$(feed) \${IWRT_OPKG_LINK}/packages/%A/\$(feed)';|" include/feeds.mk
 
             # Update APK core package path
-            sed -i "s|echo '%U/targets/%S/packages/packages.adb';|echo '%U/\${PACKAGES_OUT}/packages.adb';|" include/feeds.mk
+            sed -i "s|echo '%U/targets/%S/packages/packages.adb';|echo '%U/${PACKAGES_OUT}/packages.adb';|" include/feeds.mk
 
             # Update APK base package path
             sed -i "s|echo '%U/packages/%A/base/packages.adb';|echo '\${OWRT_APK_LINK}/%A/base/packages.adb';|" include/feeds.mk
@@ -185,15 +255,14 @@ jobs:
           else
             # OpenWRT style patching (APK only)
             # Update APK core package path
-            sed -i "s|echo '%U/\$(DATE)_\$(VERSION_CODE)_\$(BRANCH)/targets/%S/packages/packages.adb';|echo '%U/\${PACKAGES_OUT}/packages.adb';|" include/feeds.mk
+            sed -i "s|echo '%U/\$(DATE)_\$(VERSION_CODE)_\$(BRANCH)/targets/%S/packages/packages.adb';|echo '%U/${PACKAGES_OUT}/packages.adb';|" include/feeds.mk
             echo "feeds.mk patched for OpenWRT (APK)"
           fi
 
-      - name: Configure firmware
-        run: |
-          cp ${{ inputs.config_file }} ${{ inputs.source_dir }}/.config
-          cd ${{ inputs.source_dir }}
-          make defconfig
+          if ! grep -q "$PACKAGES_OUT" include/feeds.mk; then
+            echo "feeds.mk was not patched with $PACKAGES_OUT" >&2
+            exit 1
+          fi
 
       - name: Download sources
         run: |
@@ -212,8 +281,8 @@ jobs:
           cd ${{ inputs.source_dir }}
 
           # Date and version code
-          DATE=$(date +%Y%m%d_%H%M%S)
-          VERSION_CODE=$(git rev-parse --short HEAD)
+          DATE="${{ steps.builddate.outputs.date }}"
+          VERSION_CODE="${{ steps.target.outputs.version_code }}"
 
           # OpenWRT version
           OPENWRT_VERSION="SNAPSHOT"
@@ -231,23 +300,16 @@ jobs:
             fi
           fi
 
-          # Kernel version
-          KERNEL_VERSION=""
-          if grep -q 'HAS_TESTING_KERNEL=y' .config 2>/dev/null; then
-            KERNEL_VERSION=$(grep -m1 "KERNEL_TESTING_PATCHVER:" target/linux/*/Makefile 2>/dev/null | head -1 | cut -d= -f2 | tr -d ' ' | cut -d. -f1-2)
-          fi
-          if [ -z "$KERNEL_VERSION" ]; then
-            KERNEL_VERSION=$(grep -m1 "KERNEL_PATCHVER:" target/linux/*/Makefile 2>/dev/null | head -1 | cut -d= -f2 | tr -d ' ' | cut -d. -f1-2)
-          fi
-          KERNEL_VERSION=${KERNEL_VERSION:-"6.6"}
-
-          # Target info
-          TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | cut -d= -f2 | tr -d '"')
-          TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | cut -d= -f2 | tr -d '"')
-          TARGET_PKG_DIR="${TARGET_BOARD}/${TARGET_SUBTARGET}"
+          # Kernel and target metadata were resolved before the build so the
+          # package feed URL and the published directory use identical values.
+          KERNEL_VERSION="${{ steps.target.outputs.kernel_version }}"
+          TARGET_PKG_DIR="${{ steps.target.outputs.target_pkg_dir }}"
 
           # Buildinfo
-          BUILD_DIR=$(find bin -maxdepth 1 -type d -name "*_*" 2>/dev/null | head -1)
+          BUILD_DIR=$(find bin -maxdepth 1 -type d -name '20*_*' 2>/dev/null | head -1)
+          if [ -z "$BUILD_DIR" ]; then
+            BUILD_DIR=bin
+          fi
           BUILDINFO=""
           if [ -n "$BUILD_DIR" ]; then
             BUILDINFO=$(cat "$BUILD_DIR/targets/"*/*/version.buildinfo 2>/dev/null | head -1 || echo "")
@@ -256,7 +318,6 @@ jobs:
 
           # Sanitize
           OPENWRT_VERSION=$(echo "$OPENWRT_VERSION" | sed 's/[^a-zA-Z0-9.-]//g')
-          KERNEL_VERSION=$(echo "$KERNEL_VERSION" | sed 's/[^0-9.]//g')
 
           echo "date=$DATE" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
@@ -276,7 +337,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-build-${{ steps.version.outputs.date }}
+          name: openwrt-build-${{ steps.builddate.outputs.date }}
           path: ${{ inputs.source_dir }}/bin/
           retention-days: 7
           compression-level: 6

@@ -24,21 +24,32 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.WORKFLOW_PUSH_TOKEN || github.token }}
+          token: ${{ github.token }}
 
       - name: Check for new branches
         id: check
         run: |
-          # Get current branch from workflow file - extract the default value from the expression
-          CURRENT_BRANCH=$(grep -oP "repo_branch:.*\|\s*'\K[^']*" "$WORKFLOW_FILE" | head -1)
+          # Accept both the expression form and a literal branch value.
+          CURRENT_BRANCH=$(python3 - "$WORKFLOW_FILE" <<'PY'
+          import re
+          import sys
+
+          text = open(sys.argv[1], encoding="utf-8").read()
+          match = re.search(
+              r"repo_branch:\s*(?:\$\{\{\s*inputs\.branch_override\s*\|\|\s*'([^']+)'\s*\}\}|[\"']?([^'\"\s}]+))",
+              text,
+          )
+          print((match.group(1) or match.group(2)) if match else "")
+          PY
+          )
           echo "Current branch: $CURRENT_BRANCH"
           echo "current_branch=$CURRENT_BRANCH" >> $GITHUB_OUTPUT
 
           # Fetch all branches from upstream
           echo "Fetching branches from $UPSTREAM_REPO..."
-          BRANCHES=$(curl -s -H "Authorization: token ${{ secrets.WORKFLOW_PUSH_TOKEN || github.token }}" \
+          BRANCHES=$(curl -s -H "Authorization: token ${{ github.token }}" \
             "https://api.github.com/repos/$UPSTREAM_REPO/branches?per_page=100" | \
-            jq -r '.[].name' | grep -E '^next-r[0-9]+\.[0-9]+' | sort -V)
+            jq -r '.[].name' | grep -E '^next-r[0-9]+(\.[0-9]+)+\.rss\.mtk$' | sort -V)
 
           if [ -z "$BRANCHES" ]; then
             echo "No version branches found"
@@ -72,29 +83,30 @@ jobs:
 
           echo "Updating workflow from $CURRENT_BRANCH to $NEW_BRANCH"
 
-          # Update the branch defaults in workflow expressions safely
+          # Update branch values whether they are expressions or literals.
           python3 - <<'PY'
           from pathlib import Path
-          import re
           import os
+          import re
 
           workflow_file = Path(os.environ["WORKFLOW_FILE"])
           new_branch = os.environ["NEW_BRANCH"]
           text = workflow_file.read_text()
 
-          text = re.sub(
-              r"repo_branch:\s*\$\{\{\s*inputs\.branch_override\s*\|\|\s*'[^']*'\s*\}\}",
-              "repo_branch: ${{ inputs.branch_override || '" + new_branch + "' }}",
-              text,
-              count=1,
-          )
-          text = re.sub(
-              r"source_branch:\s*\$\{\{\s*inputs\.branch_override\s*\|\|\s*'[^']*'\s*\}\}",
-              "source_branch: ${{ inputs.branch_override || '" + new_branch + "' }}",
-              text,
-              count=1,
-          )
+          def set_branch(text, key):
+              pattern = (
+                  r"(" + re.escape(key) + r":\s*)"
+                  r"(?:\$\{\{\s*inputs\.branch_override\s*\|\|\s*'[^']*'\s*\}\}"
+                  r"|\"[^\"]*\"|'[^']*'|[^\s#]+)"
+              )
+              replacement = r"\1${{ inputs.branch_override || '" + new_branch + "' }}"
+              updated, count = re.subn(pattern, replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit(f"Could not update {key} in {workflow_file}")
+              return updated
 
+          text = set_branch(text, "repo_branch")
+          text = set_branch(text, "source_branch")
           workflow_file.write_text(text)
           PY
 
@@ -105,18 +117,21 @@ jobs:
         if: steps.check.outputs.should_update == 'true'
         run: |
           NEW_BRANCH="${{ steps.check.outputs.new_branch }}"
-          CURRENT_BRANCH="${{ steps.check.outputs.current_branch }}"
 
           echo "Updating README.md..."
 
-          # Update the branch reference in README - more precise pattern to avoid duplicates
-          sed -i "s|tree/$CURRENT_BRANCH |tree/$NEW_BRANCH |g" README.md
+          # Replace whatever pesa1234 branch the README currently references.
+          sed -i -E "s|(https://github.com/pesa1234/openwrt/tree/)[^ ]+|\\1${NEW_BRANCH}|g" README.md
 
           # Verify the change
           grep "OpenWRT (pesa1234)" -A1 README.md | head -2
 
       - name: Commit and push changes
+        id: commit
         if: steps.check.outputs.should_update == 'true'
+        continue-on-error: true
+        env:
+          WORKFLOW_PUSH_TOKEN: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
         run: |
           NEW_BRANCH="${{ steps.check.outputs.new_branch }}"
           CURRENT_BRANCH="${{ steps.check.outputs.current_branch }}"
@@ -127,18 +142,26 @@ jobs:
           git add "$WORKFLOW_FILE"
           git add README.md
 
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
           git commit -m "chore: update pesa1234 branch from $CURRENT_BRANCH to $NEW_BRANCH - auto-detected new upstream release"
 
-          git push origin ${{ github.ref_name }}
-
+          if [ -z "$WORKFLOW_PUSH_TOKEN" ]; then
+            echo "WORKFLOW_PUSH_TOKEN is not configured; skipping push (build will still be dispatched)"
+            exit 0
+          fi
+          git push "https://x-access-token:${WORKFLOW_PUSH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${{ github.ref_name }}"
           echo "Changes committed and pushed"
 
       - name: Trigger build workflow
         if: steps.check.outputs.should_update == 'true'
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: OpenWRT SNAPSHOT Firmware mt76 driver (pesa1234)
-          token: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
+          workflow: openwrt-SNAPSHOT-mt76.yml
+          token: ${{ github.token }}
           inputs: '{"branch_override": "${{ steps.check.outputs.new_branch }}"}'
 
       - name: Summary
@@ -152,6 +175,10 @@ jobs:
             echo "- New: \`${{ steps.check.outputs.new_branch }}\`" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Build workflow has been triggered automatically." >> $GITHUB_STEP_SUMMARY
+            if [ "${{ steps.commit.outcome }}" = "failure" ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "⚠️ **Workflow/README push failed.** The build was dispatched with the branch override; check \`WORKFLOW_PUSH_TOKEN\` (contents + workflow scope)." >> $GITHUB_STEP_SUMMARY
+            fi
           else
             echo "⏸️ No new versions detected" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY

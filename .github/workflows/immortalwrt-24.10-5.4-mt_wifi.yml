@@ -17,6 +17,7 @@ jobs:
       repo_url: https://github.com/padavanonly/immortalwrt-mt798x-24.10.git
       repo_branch: 2410
       config_file: config.immortalwrt-2410-5.4-padavanonly
+      firmware_name: immortalwrt-2410-5.4-padavanonly
       source_dir: immortalwrt-mt798x-24.10
       patch_file: 903-fix-nft-reject-bridge.patch
       patch_target: target/linux/generic/backport-5.4

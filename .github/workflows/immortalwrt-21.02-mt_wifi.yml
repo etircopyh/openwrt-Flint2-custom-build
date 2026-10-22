@@ -19,6 +19,7 @@ jobs:
       repo_url: https://github.com/hanwckf/immortalwrt-mt798x.git
       repo_branch: openwrt-21.02
       config_file: config.immortalwrt-2102-hanwckf
+      firmware_name: immortalwrt-2102-hanwckf
       source_dir: immortalwrt-mt798x
       patch_feeds_mk: true
       feeds_mk_type: immortalwrt-opkg

@@ -67,87 +67,66 @@ jobs:
           name: openwrt-build-${{ inputs.date }}
           path: bin
 
+      - name: Resolve build directory
+        id: builddir
+        run: |
+          TARGET_DIR="targets/${{ inputs.target_pkg_dir }}"
+          # Prefer the dated build tree used by the custom builds; fall back
+          # to the standard OpenWrt bin/targets layout.
+          BUILD_DIR=""
+          for d in bin/20*_*; do
+            if [ -d "$d/$TARGET_DIR" ]; then
+              BUILD_DIR="$d"
+              break
+            fi
+          done
+          if [ -z "$BUILD_DIR" ] && [ -d "bin/$TARGET_DIR" ]; then
+            BUILD_DIR=bin
+          fi
+          if [ -z "$BUILD_DIR" ]; then
+            echo "No build directory containing $TARGET_DIR found under bin" >&2
+            find bin -maxdepth 3 -type d | sort | sed -n '1,50p' >&2
+            exit 1
+          fi
+          echo "dir=$BUILD_DIR" >> "$GITHUB_OUTPUT"
+          echo "Resolved build directory: $BUILD_DIR"
+
       - name: Prepare packages
         id: packages
         run: |
-          # Find build directory (matches old working workflow)
-          BUILD_DIR=$(ls -d bin/$(date +"%Y-%m-%d")_* 2>/dev/null | head -1)
-          if [ -z "$BUILD_DIR" ]; then
-            echo "No build directory found"
-            echo "package_count=0" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          BUILD_DIR="${{ steps.builddir.outputs.dir }}"
           echo "Build directory: $BUILD_DIR"
 
-          # Debug: show package directories
-          echo "=== Package directories ==="
-          find "$BUILD_DIR" -type d -name "packages" 2>/dev/null || true
-          echo "==========================="
-
-          # Create output directory
           PACKAGES_DIR_NAME="${{ inputs.date }}_${{ inputs.firmware_name }}_${{ inputs.version_code }}_kernel-${{ inputs.kernel_version }}"
           PACKAGES_OUT="${PACKAGES_DIR_NAME}/targets/${{ inputs.target_pkg_dir }}/packages"
+          rm -rf "$PACKAGES_DIR_NAME"
           mkdir -p "$PACKAGES_OUT"
 
-          TOTAL_PACKAGES=0
-
-          # Copy packages from targets/<arch>/<subtarget>/packages/ (kernel packages)
           TARGETS_PKG_SRC="${BUILD_DIR}/targets/${{ inputs.target_pkg_dir }}/packages"
-          if [ -d "$TARGETS_PKG_SRC" ]; then
-            # Check for both .ipk and .apk
-            COUNT_IPK=$(find "$TARGETS_PKG_SRC" -name "*.ipk" -type f 2>/dev/null | wc -l)
-            COUNT_APK=$(find "$TARGETS_PKG_SRC" -name "*.apk" -type f 2>/dev/null | wc -l)
-            COUNT=$((COUNT_IPK + COUNT_APK))
-            echo "Found $COUNT packages ($COUNT_IPK .ipk, $COUNT_APK .apk) in targets/${{ inputs.target_pkg_dir }}/packages"
-            if [ "$COUNT_IPK" -gt 0 ]; then
-              cp -v "$TARGETS_PKG_SRC"/*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
-            fi
-            if [ "$COUNT_APK" -gt 0 ]; then
-              cp -v "$TARGETS_PKG_SRC"/*.apk "$PACKAGES_OUT/" 2>/dev/null || true
-            fi
-            TOTAL_PACKAGES=$((TOTAL_PACKAGES + COUNT))
-          fi
-
-          # Copy packages from packages/<arch>/ (main packages - this is where most packages are!)
-          for PKG_ARCH_DIR in "$BUILD_DIR/packages"/*; do
-            if [ -d "$PKG_ARCH_DIR" ]; then
-              ARCH_NAME=$(basename "$PKG_ARCH_DIR")
-              echo "Checking packages/$ARCH_NAME..."
-              for FEED_DIR in "$PKG_ARCH_DIR"/*; do
-                if [ -d "$FEED_DIR" ]; then
-                  # Check for both .ipk and .apk
-                  COUNT_IPK=$(find "$FEED_DIR" -name "*.ipk" -type f 2>/dev/null | wc -l)
-                  COUNT_APK=$(find "$FEED_DIR" -name "*.apk" -type f 2>/dev/null | wc -l)
-                  COUNT=$((COUNT_IPK + COUNT_APK))
-                  if [ "$COUNT" -gt 0 ]; then
-                    echo "Found $COUNT packages ($COUNT_IPK .ipk, $COUNT_APK .apk) in packages/$ARCH_NAME/$(basename "$FEED_DIR")"
-                    if [ "$COUNT_IPK" -gt 0 ]; then
-                      cp -v "$FEED_DIR"/*.ipk "$PACKAGES_OUT/" 2>/dev/null || true
-                    fi
-                    if [ "$COUNT_APK" -gt 0 ]; then
-                      cp -v "$FEED_DIR"/*.apk "$PACKAGES_OUT/" 2>/dev/null || true
-                    fi
-                    TOTAL_PACKAGES=$((TOTAL_PACKAGES + COUNT))
-                  fi
-                fi
-              done
-            fi
-          done
-
-          echo "Total packages found: $TOTAL_PACKAGES"
-
-          if [ "$TOTAL_PACKAGES" -eq 0 ]; then
-            echo "package_count=0" >> $GITHUB_OUTPUT
+          if [ ! -d "$TARGETS_PKG_SRC" ]; then
+            echo "Package directory not found: $TARGETS_PKG_SRC" >&2
+            echo "package_count=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Count unique packages (dedupe) - count both .ipk and .apk
-          PACKAGE_COUNT=$(find "$PACKAGES_OUT" -type f \( -name "*.ipk" -o -name "*.apk" \) 2>/dev/null | wc -l)
-          echo "Unique packages after copy: $PACKAGE_COUNT"
+          # Publish the complete target package directory, including the
+          # Packages / packages.adb index and signature files. Do not merge
+          # feed directories here: flattening them would leave the index
+          # describing none of the copied files.
+          cp -a "$TARGETS_PKG_SRC"/. "$PACKAGES_OUT"/
+
+          PACKAGE_COUNT=$(find "$PACKAGES_OUT" -maxdepth 1 -type f \( -name '*.ipk' -o -name '*.apk' \) | wc -l)
+          echo "Packages in $PACKAGES_OUT: $PACKAGE_COUNT"
+
+          if [ "$PACKAGE_COUNT" -eq 0 ]; then
+            echo "package_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           # Create README
           REPO_NAME="${{ github.repository }}"
           BRANCH_NAME="${{ github.ref_name }}"
+          FEED_URL="https://raw.githubusercontent.com/${REPO_NAME}/${BRANCH_NAME}/${PACKAGES_OUT}"
           {
             echo "# ${{ inputs.firmware_name }} Packages"
             echo ""
@@ -162,39 +141,36 @@ jobs:
             echo ""
             echo "## Package Repository Configuration"
             echo ""
-            echo "Add this to your OpenWRT device's /etc/opkg/distfeeds.conf:"
-            echo ""
-            echo 'src/gz openwrt_core https://raw.githubusercontent.com/'"${REPO_NAME}/${BRANCH_NAME}/${PACKAGES_OUT}"
+            if find "$PACKAGES_OUT" -maxdepth 1 -type f -name '*.apk' | grep -q .; then
+              echo "Add this line to your OpenWRT device's /etc/apk/repositories.d/customfeeds.list:"
+              echo ""
+              echo "${FEED_URL}/packages.adb"
+            elif find "$PACKAGES_OUT" -maxdepth 1 -type f -name '*.ipk' | grep -q .; then
+              echo "Add this to your OpenWRT device's /etc/opkg/distfeeds.conf:"
+              echo ""
+              echo "src/gz custom_core ${FEED_URL}"
+            fi
             echo ""
             echo "## Package List"
           } > "${PACKAGES_DIR_NAME}/README.md"
 
-          find "$PACKAGES_OUT" -type f \( -name "*.ipk" -o -name "*.apk" \) | sort | while read -r pkg; do
+          find "$PACKAGES_OUT" -maxdepth 1 -type f \( -name '*.ipk' -o -name '*.apk' \) | sort | while read -r pkg; do
             PKG_NAME=$(basename "$pkg")
             PKG_SIZE=$(du -h "$pkg" | cut -f1)
             echo "- ${PKG_NAME} (${PKG_SIZE})" >> "${PACKAGES_DIR_NAME}/README.md"
           done
 
-          # Create symlink
+          # Create symlink to the stable feed directory
           SYMLINK_NAME="packages-output-${{ inputs.firmware_name }}"
-          ln -sf "$PACKAGES_OUT" "$SYMLINK_NAME"
+          ln -sf "$PACKAGES_DIR_NAME" "$SYMLINK_NAME"
 
           # Create archive
           PACKAGES_ARCHIVE="packages-${{ inputs.firmware_name }}-${{ inputs.date }}.tar.gz"
           tar -czf "$PACKAGES_ARCHIVE" -C "$PACKAGES_DIR_NAME" .
 
-          echo "package_count=$PACKAGE_COUNT" >> $GITHUB_OUTPUT
-          echo "packages_dir_name=$PACKAGES_DIR_NAME" >> $GITHUB_OUTPUT
-          echo "packages_archive=$PACKAGES_ARCHIVE" >> $GITHUB_OUTPUT
-
-      - name: Upload packages for deploy
-        if: steps.packages.outputs.package_count != '0'
-        uses: actions/upload-artifact@v4
-        with:
-          name: packages-deploy-${{ inputs.date }}
-          path: ${{ steps.packages.outputs.packages_dir_name }}
-          retention-days: 7
-          compression-level: 9
+          echo "package_count=$PACKAGE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "packages_dir_name=$PACKAGES_DIR_NAME" >> "$GITHUB_OUTPUT"
+          echo "packages_archive=$PACKAGES_ARCHIVE" >> "$GITHUB_OUTPUT"
 
       - name: Upload packages archive
         if: steps.packages.outputs.package_count != '0'
@@ -207,11 +183,7 @@ jobs:
 
       - name: Prepare firmware artifact
         run: |
-          BUILD_DIR=$(ls -d bin/$(date +"%Y-%m-%d")_* 2>/dev/null | head -1)
-          if [ -z "$BUILD_DIR" ]; then
-            echo "No build directory found"
-            exit 1
-          fi
+          BUILD_DIR="${{ steps.builddir.outputs.dir }}"
           FIRMWARE_DIR="${BUILD_DIR}/targets/${{ inputs.target_pkg_dir }}"
           cd "$FIRMWARE_DIR"
           rm -rf packages

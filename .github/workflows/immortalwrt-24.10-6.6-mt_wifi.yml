@@ -19,6 +19,7 @@ jobs:
       repo_url: https://github.com/padavanonly/immortalwrt-mt798x-6.6.git
       repo_branch: openwrt-24.10-6.6
       config_file: config.immortalwrt-2410-6.6-padavanonly
+      firmware_name: immortalwrt-2410-6.6-padavanonly
       source_dir: immortalwrt-mt798x-6.6
       patch_feeds_mk: true
       feeds_mk_type: immortalwrt-opkg
